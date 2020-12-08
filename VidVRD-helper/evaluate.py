@@ -65,15 +65,15 @@ if __name__ == '__main__':
     if args.dataset=='vidvrd':
         if args.task=='relation':
             # load train set for zero-shot evaluation
-            dataset = VidVRD('../vidvrd-dataset', '../vidvrd-dataset/videos', ['train', args.split])
+            dataset = VidVRD('~/data/vidvrd', '~/data/vidvrd/videos', ['train', args.split])
         else:
-            dataset = VidVRD('../vidvrd-dataset', '../vidvrd-dataset/videos', [args.split])
+            dataset = VidVRD('~/data/vidvrd', '~/data/vidvrd/videos', [args.split])
     elif args.dataset=='vidor':
         if args.task=='relation':
             # load train set for zero-shot evaluation
-            dataset = VidOR('../vidor-dataset/annotation', '../vidor-dataset/vidor', ['training', args.split], low_memory=True)
+            dataset = VidOR('~/data/vidor/annotation', '~/data/vidor/videos', ['training', args.split], low_memory=True)
         else:
-            dataset = VidOR('../vidor-dataset/annotation', '../vidor-dataset/vidor', [args.split], low_memory=True)
+            dataset = VidOR('~/data/vidor/annotation', '~/data/vidor/videos', [args.split], low_memory=True)
     else:
         raise Exception('Unknown dataset {}'.format(args.dataset))
 

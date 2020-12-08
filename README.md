@@ -1,10 +1,13 @@
 # Video Visual Relationship Detection & Video Object Relation
 
 ## VidVRD
-[vidvrd](https://xdshang.github.io/docs/imagenet-vidvrd.html)
+
+### Dataset
+VidVRD dataset can be found in [here](https://xdshang.github.io/docs/imagenet-vidvrd.html).
 
 ### Preprocessing
 use `vidvrd_to_image.sh`
+will took about 7-8 hours.
 
 ### Annotations structure
 The json file contains a dictionary sturctured like:
@@ -53,10 +56,13 @@ The json file contains a dictionary sturctured like:
 ```
 
 ## VidOR
-[vidor](https://xdshang.github.io/docs/vidor.html)
+
+### Dataset
+VidOR dataset can be found in [here](https://xdshang.github.io/docs/vidor.html).
 
 ### Preprocessing
 use `vidor_to_image.sh`
+will took about 1 hour.
 
 ### Annotations structure
 The json file contains a dictionary sturctured like:

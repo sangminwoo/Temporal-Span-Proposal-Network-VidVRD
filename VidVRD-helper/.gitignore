@@ -1,6 +1,10 @@
 *.pyc
 __pycache__/
 
+*.h5
+*.json
+*.zip
+
 .vscode/
 
 baseline/features/*
