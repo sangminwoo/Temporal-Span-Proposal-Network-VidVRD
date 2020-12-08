@@ -1,5 +1,5 @@
 import os
-import cPickle
+import _pickle
 import argparse
 import itertools
 import time
@@ -10,7 +10,7 @@ from dlib import drectangle
 import numpy as np
 
 from baseline import *
-from trajectory import traj_iou, object_trajectory_proposal
+from .trajectory import traj_iou, object_trajectory_proposal
 
 
 def _merge_trajs(traj_1, traj_2):

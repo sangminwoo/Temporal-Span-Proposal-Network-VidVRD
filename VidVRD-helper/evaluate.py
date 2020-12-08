@@ -1,5 +1,6 @@
 import json
 import argparse
+import os
 
 from dataset import VidVRD, VidOR
 from evaluation import eval_video_object, eval_action, eval_visual_relation
@@ -56,6 +57,7 @@ def evaluate_relation(dataset, split, prediction, use_old_zeroshot_eval=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate a set of tasks related to video relation understanding.')
+    parser.add_argument('data_dir', type=str, help='dataset directory')
     parser.add_argument('dataset', type=str, help='the dataset name for evaluation')
     parser.add_argument('split', type=str, help='the split name for evaluation')
     parser.add_argument('task', choices=['object', 'action', 'relation'], help='which task to evaluate')
@@ -65,15 +67,15 @@ if __name__ == '__main__':
     if args.dataset=='vidvrd':
         if args.task=='relation':
             # load train set for zero-shot evaluation
-            dataset = VidVRD('~/data/vidvrd', '~/data/vidvrd/videos', ['train', args.split])
+            dataset = VidVRD(os.path.join(args.data_dir, 'vidvrd'), os.path.join(args.data_dir, 'vidvrd/videos'), ['train', args.split])
         else:
-            dataset = VidVRD('~/data/vidvrd', '~/data/vidvrd/videos', [args.split])
+            dataset = VidVRD(os.path.join(args.data_dir, 'vidvrd'), os.path.join(args.data_dir, 'vidvrd/videos'), [args.split])
     elif args.dataset=='vidor':
         if args.task=='relation':
             # load train set for zero-shot evaluation
-            dataset = VidOR('~/data/vidor/annotation', '~/data/vidor/videos', ['training', args.split], low_memory=True)
+            dataset = VidOR(os.path.join(args.data_dir, 'vidor/annotation'), os.path.join(args.data_dir, 'vidor/videos'), ['training', args.split], low_memory=True)
         else:
-            dataset = VidOR('~/data/vidor/annotation', '~/data/vidor/videos', [args.split], low_memory=True)
+            dataset = VidOR(os.path.join(args.data_dir, 'vidor/annotation'), os.path.join(args.data_dir, 'vidor/videos'), [args.split], low_memory=True)
     else:
         raise Exception('Unknown dataset {}'.format(args.dataset))
 

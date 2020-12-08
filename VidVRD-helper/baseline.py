@@ -1,7 +1,7 @@
 import os
 import json
 import argparse
-import cPickle as pkl
+import _pickle as pkl
 from collections import defaultdict
 
 from tqdm import tqdm
@@ -11,11 +11,11 @@ from baseline import segment_video, get_model_path
 from baseline import trajectory, feature, model, association
 
 
-def load_object_trajectory_proposal():
+def load_object_trajectory_proposal(data_dir):
     """
     Test loading precomputed object trajectory proposals
     """
-    dataset = VidVRD('../vidvrd-dataset', '../vidvrd-dataset/videos', ['train', 'test'])
+    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     video_indices = dataset.get_index(split='train')
     for vid in video_indices:
@@ -35,11 +35,11 @@ def load_object_trajectory_proposal():
             trajs = trajectory.object_trajectory_proposal(dataset, vid, fstart, fend, gt=True, verbose=True)
 
 
-def load_relation_feature():
+def load_relation_feature(data_dir):
     """
     Test loading precomputed relation features
     """
-    dataset = VidVRD('../vidvrd-dataset', '../vidvrd-dataset/videos', ['train', 'test'])
+    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
     extractor = feature.FeatureExtractor(dataset, prefetch_count=0)
 
     video_indices = dataset.get_index(split='train')
@@ -58,8 +58,8 @@ def load_relation_feature():
             extractor.extract_feature(dataset, vid, fstart, fend, verbose=True)
 
 
-def train():
-    dataset = VidVRD('../vidvrd-dataset', '../vidvrd-dataset/videos', ['train', 'test'])
+def train(data_dir):
+    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     param = dict()
     param['model_name'] = 'baseline'
@@ -79,8 +79,8 @@ def train():
     model.train(dataset, param)
 
 
-def detect():
-    dataset = VidVRD('../vidvrd-dataset', '../vidvrd-dataset/videos', ['train', 'test'])
+def detect(data_dir):
+    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
     with open(os.path.join(get_model_path(), 'baseline_setting.json'), 'r') as fin:
         param = json.load(fin)
     short_term_relations = model.predict(dataset, param)
@@ -106,6 +106,8 @@ def detect():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='VidVRD baseline')
+    parser.add_argument('--data_dir', type=str, help='dataset directory')
+    parser.add_argument('--dataset', type=str, help='the dataset name for training')
     parser.add_argument('--load_feature', action="store_true", default=False, help='Test loading precomputed features')
     parser.add_argument('--train', action="store_true", default=False, help='Train model')
     parser.add_argument('--detect', action="store_true", default=False, help='Detect video visual relation')
@@ -113,11 +115,11 @@ if __name__ == '__main__':
 
     if args.load_feature or args.train or args.detect:
         if args.load_feature:
-            load_object_trajectory_proposal()
-            load_relation_feature()
+            load_object_trajectory_proposal(os.path.join(args.data_dir, args.dataset))
+            load_relation_feature(os.path.join(args.data_dir, args.dataset))
         if args.train:
-            train()
+            train(os.path.join(args.data_dir, args.dataset))
         if args.detect:
-            detect()
+            detect(os.path.join(args.data_dir, args.dataset))
     else:
         parser.print_help()

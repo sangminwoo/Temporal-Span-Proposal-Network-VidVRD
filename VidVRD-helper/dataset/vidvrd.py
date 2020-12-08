@@ -20,6 +20,7 @@ class VidVRD(Dataset):
 
     def _get_anno_files(self, split):
         anno_files = glob.glob(os.path.join(self.anno_rpath, '{}/*.json'.format(split)))
+
         assert len(anno_files)>0, 'No annotation file found. Please check if the directory is correct.'
         return anno_files
 

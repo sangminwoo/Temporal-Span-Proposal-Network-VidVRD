@@ -3,7 +3,7 @@ import numpy as np
 
 import os
 import json
-import cPickle as pkl
+import _pickle as pkl
 from collections import defaultdict, deque
 
 from baseline import *

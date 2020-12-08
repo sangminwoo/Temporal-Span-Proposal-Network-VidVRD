@@ -3,13 +3,13 @@ import h5py
 
 import os
 import time
-import cPickle as pkl
+import _pickle as pkl
 import atexit, signal
 from time import strftime, sleep
 from itertools import cycle, product
 from multiprocessing import Process, Queue, sharedctypes
 
-from trajectory import traj_iou, object_trajectory_proposal
+from .trajectory import traj_iou, object_trajectory_proposal
 from baseline import *
 
 
