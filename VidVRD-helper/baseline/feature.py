@@ -17,7 +17,7 @@ class SharedArray(object):
     """Numpy array that uses sharedctypes to store data"""
     def __init__(self, shape, dtype=np.float32):
         # Compute total number of elements
-        size = np.prod(shape)
+        size = int(np.prod(shape))
         # Get the size of element
         if dtype == np.float32:
             typecode = 'f'

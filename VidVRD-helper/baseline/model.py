@@ -14,6 +14,7 @@ from keras.utils import np_utils
 from keras.engine.topology import Layer
 from keras.optimizers import SGD, Adam
 from keras import backend as K
+import tensorflow as tf
 
 from .feature import FeatureExtractor
 from baseline import *
@@ -174,9 +175,9 @@ class SelectionLayer(Layer):
         super(SelectionLayer, self).build(input_shape)
 
     def call(self, inputs):
-        s = K.tf.gather(inputs[0], self.sel_inds[0], axis=1)
-        p = K.tf.gather(inputs[1], self.sel_inds[1], axis=1)
-        o = K.tf.gather(inputs[2], self.sel_inds[2], axis=1)
+        s = tf.gather(inputs[0], self.sel_inds[0], axis=1)
+        p = tf.gather(inputs[1], self.sel_inds[1], axis=1)
+        o = tf.gather(inputs[2], self.sel_inds[2], axis=1)
         return s*p*o
 
     def compute_output_shape(self, input_shape):
@@ -190,7 +191,7 @@ def build_model(dataset, param):
 
     p = Dense(units=param['predicate_num'])(inp_f)
 
-    sel_inds = np.asarray(_train_triplet_id.keys(), dtype='int32').T
+    sel_inds = np.asarray(list(_train_triplet_id.keys()), dtype='int32').T
     r = SelectionLayer(sel_inds)([prob_s, p, prob_o])
     prob = Activation('softmax')(r)
 
