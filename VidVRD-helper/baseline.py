@@ -1,15 +1,14 @@
+import logging
 import os
 import json
 import argparse
 import _pickle as pkl
 from collections import defaultdict
-
 from tqdm import tqdm
 
 from dataset import VidVRD
 from baseline import segment_video, get_model_path
-from baseline import trajectory, feature, model, association
-
+from baseline import trajectory, feature, model, association, utils
 
 def load_object_trajectory_proposal(data_dir):
     """
@@ -48,17 +47,17 @@ def load_relation_feature(data_dir):
         for duration in durations:
             segs = segment_video(*duration)
             for fstart, fend in segs:
-                extractor.extract_feature(dataset, vid, fstart, fend, verbose=True)
+                extractor.extract_feature(vid, fstart, fend, verbose=True)
 
     video_indices = dataset.get_index(split='test')
     for vid in video_indices:
         anno = dataset.get_anno(vid)
         segs = segment_video(0, anno['frame_count'])
         for fstart, fend in segs:
-            extractor.extract_feature(dataset, vid, fstart, fend, verbose=True)
+            extractor.extract_feature(vid, fstart, fend, verbose=True)
 
 
-def train(data_dir):
+def train(data_dir, logger):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     param = dict()
@@ -74,23 +73,23 @@ def train(data_dir):
     param['epsilon'] = 1e-8
     param['pair_topk'] = 20
     param['seg_topk'] = 200
-    print(param)
+    logger.info(param)
 
-    model.train(dataset, param)
+    model.train(dataset, param, logger)
 
 
-def detect(data_dir):
+def detect(data_dir, logger):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
     with open(os.path.join(get_model_path(), 'baseline_setting.json'), 'r') as fin:
         param = json.load(fin)
-    short_term_relations = model.predict(dataset, param)
+    short_term_relations = model.predict(dataset, param, logger)
     # group short term relations by video
     video_st_relations = defaultdict(list)
     for index, st_rel in short_term_relations.items():
         vid = index[0]
         video_st_relations[vid].append((index, st_rel))
     # video-level visual relation detection by relational association
-    print('greedy relational association ...')
+    logger.info('greedy relational association ...')
     video_relations = dict()
     for vid in tqdm(video_st_relations.keys()):
         video_relations[vid] = association.greedy_relational_association(
@@ -113,13 +112,16 @@ if __name__ == '__main__':
     parser.add_argument('--detect', action="store_true", default=False, help='Detect video visual relation')
     args = parser.parse_args()
 
+    logger = utils.setup_logger(name='vidvrd', save_dir='logs', filename=f'{utils.get_timestamp()}_vidvrd.txt')
+    logger = logging.getLogger('vidvrd')
+
     if args.load_feature or args.train or args.detect:
         if args.load_feature:
             load_object_trajectory_proposal(os.path.join(args.data_dir, args.dataset))
             load_relation_feature(os.path.join(args.data_dir, args.dataset))
         if args.train:
-            train(os.path.join(args.data_dir, args.dataset))
+            train(os.path.join(args.data_dir, args.dataset), logger)
         if args.detect:
-            detect(os.path.join(args.data_dir, args.dataset))
+            detect(os.path.join(args.data_dir, args.dataset), logger)
     else:
         parser.print_help()

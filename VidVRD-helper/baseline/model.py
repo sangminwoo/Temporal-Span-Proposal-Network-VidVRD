@@ -1,24 +1,33 @@
 import os
 import json
-from time import strftime
+import time
+from datetime import datetime, timedelta
 from itertools import product, cycle
 from collections import defaultdict, OrderedDict
 
 import numpy as np
 import h5py
 from tqdm import tqdm
+
+import torch
+import torch.backends.cudnn as cudnn
+import torch.nn as nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DataLoader
+
 from keras.models import Model
 from keras.layers import Input, Dense, Activation
-from keras.initializers import RandomNormal, RandomUniform
+# from keras.initializers import RandomNormal, RandomUniform
 from keras.utils import np_utils
 from keras.engine.topology import Layer
 from keras.optimizers import SGD, Adam
-from keras import backend as K
+# from keras import backend as K
 import tensorflow as tf
 
 from .feature import FeatureExtractor
+from .utils import AverageMeter
 from baseline import *
-
 
 _train_triplet_id = OrderedDict()
 
@@ -33,15 +42,25 @@ def feature_preprocess(feat):
     # subject TrajectoryShape + HoG + HoF + MBH motion feature
     # (since this feature is Bag-of-Word type, we l1-normalize it so that
     # each element represents the fraction instead of count)
-    feat[:, 70: 1070] = np_utils.normalize(feat[:, 70: 1070], -1, 1)
-    feat[:, 1070: 2070] = np_utils.normalize(feat[:, 1070: 2070], -1, 1)
-    feat[:, 2070: 3070] = np_utils.normalize(feat[:, 2070: 3070], -1, 1)
-    feat[:, 3070: 4070] = np_utils.normalize(feat[:, 3070: 4070], -1, 1)
+
+    # feat[:, 70: 1070] /= abs(feat[:, 70: 1070]).sum(axis=1).reshape(-1, 1)
+    # feat[:, 1070: 2070] /= abs(feat[:, 1070: 2070]).sum(axis=1).reshape(-1, 1)
+    # feat[:, 2070: 3070] /= abs(feat[:, 2070: 3070]).sum(axis=1).reshape(-1, 1)
+    # feat[:, 3070: 4070] /= abs(feat[:, 3070: 4070]).sum(axis=1).reshape(-1, 1)
+    feat[:, 70: 1070] = np_utils.normalize(feat[:, 70: 1070], axis=-1, order=1)
+    feat[:, 1070: 2070] = np_utils.normalize(feat[:, 1070: 2070], axis=-1, order=1)
+    feat[:, 2070: 3070] = np_utils.normalize(feat[:, 2070: 3070], axis=-1, order=1)
+    feat[:, 3070: 4070] = np_utils.normalize(feat[:, 3070: 4070], axis=-1, order=1)
+
     # object TrajectoryShape + HoG + HoF + MBH motion feature
-    feat[:, 4070: 5070] = np_utils.normalize(feat[:, 4070: 5070], -1, 1)
-    feat[:, 5070: 6070] = np_utils.normalize(feat[:, 5070: 6070], -1, 1)
-    feat[:, 6070: 7070] = np_utils.normalize(feat[:, 6070: 7070], -1, 1)
-    feat[:, 7070: 8070] = np_utils.normalize(feat[:, 7070: 8070], -1, 1)
+    # feat[:, 4070: 5070] /= abs(feat[:, 4070: 5070]).sum(axis=1).reshape(-1, 1)
+    # feat[:, 5070: 6070] /= abs(feat[:, 5070: 6070]).sum(axis=1).reshape(-1, 1)
+    # feat[:, 6070: 7070] /= abs(feat[:, 6070: 7070]).sum(axis=1).reshape(-1, 1)
+    # feat[:, 7070: 8070] /= abs(feat[:, 7070: 8070]).sum(axis=1).reshape(-1, 1)
+    feat[:, 4070: 5070] = np_utils.normalize(feat[:, 4070: 5070], axis=-1, order=1)
+    feat[:, 5070: 6070] = np_utils.normalize(feat[:, 5070: 6070], axis=-1, order=1)
+    feat[:, 6070: 7070] = np_utils.normalize(feat[:, 6070: 7070], axis=-1, order=1)
+    feat[:, 7070: 8070] = np_utils.normalize(feat[:, 7070: 8070], axis=-1, order=1)
 
     # relative posititon + size + motion feature
     # feat[:, 8070: 9070]
@@ -55,7 +74,7 @@ class DataGenerator(FeatureExtractor):
     Generate (incl. sample) relation features of (subject, object)s
     in the video segments that have multiple objects detected.
     """
-    def __init__(self, dataset, param, prefetch_count=2):
+    def __init__(self, dataset, param, logger, prefetch_count=2):
         super(DataGenerator, self).__init__(dataset, prefetch_count)
         self.rng = np.random.RandomState(param['rng_seed'])
         self.batch_size = param['batch_size']
@@ -63,7 +82,7 @@ class DataGenerator(FeatureExtractor):
         assert self.max_sampling_in_batch <= self.batch_size
         self.phase = param['phase']
 
-        print('preparing video segments for {}...'.format(self.phase))
+        logger.info('preparing video segments for {}...'.format(self.phase))
         if self.phase == 'train':
             # initialize training triplet id
             _train_triplet_id.clear()
@@ -175,16 +194,21 @@ class SelectionLayer(Layer):
         super(SelectionLayer, self).build(input_shape)
 
     def call(self, inputs):
-        s = tf.gather(inputs[0], self.sel_inds[0], axis=1)
-        p = tf.gather(inputs[1], self.sel_inds[1], axis=1)
-        o = tf.gather(inputs[2], self.sel_inds[2], axis=1)
+        # s = tf.gather(inputs[0], self.sel_inds[0], axis=1)
+        # p = tf.gather(inputs[1], self.sel_inds[1], axis=1)
+        # o = tf.gather(inputs[2], self.sel_inds[2], axis=1)
+
+        s = inputs[0][:, self.sel_inds[0]]
+        p = inputs[1][:, self.sel_inds[1]]
+        o = inputs[2][:, self.sel_inds[2]]
+
         return s*p*o
 
     def compute_output_shape(self, input_shape):
         return (None, self.sel_inds.shape[1])
 
 
-def build_model(dataset, param):
+def build_model(dataset, param, logger):
     inp_f = Input(shape=(param['feature_dim'],), dtype='float32')
     prob_s = Input(shape=(param['object_num'],), dtype='float32')
     prob_o = Input(shape=(param['object_num'],), dtype='float32')
@@ -197,26 +221,29 @@ def build_model(dataset, param):
 
     model = Model(inputs=[inp_f, prob_s, prob_o], outputs=[prob])
     model.summary()
-    print('Trainable weights: {}'.format(model.trainable_weights))
+    logger.info('Trainable weights: {}'.format(model.trainable_weights))
 
     return model
 
 
-def train(dataset, param):
+def train(dataset, param, logger):
     param['phase'] = 'train'
     param['object_num'] = dataset.get_object_num()
     param['predicate_num'] = dataset.get_predicate_num()
 
-    data_generator = DataGenerator(dataset, param)
+    data_generator = DataGenerator(dataset, param, logger)
     # data_generator = DataGenerator(dataset, param, prefetch_count = 0)
     param['feature_dim'] = data_generator.get_data_shapes()[0][1]
-    print('Feature dimension is {}'.format(param['feature_dim']))
+    logger.info('Feature dimension is {}'.format(param['feature_dim']))
     param['triplet_num'] = len(_train_triplet_id)
-    print('Number of observed training triplets is {}'.format(param['triplet_num']))
+    logger.info('Number of observed training triplets is {}'.format(param['triplet_num']))
 
-    training_model = build_model(dataset, param)
+    training_model = build_model(dataset, param, logger)
     adam = Adam(lr=param['learning_rate'])
     training_model.compile(optimizer=adam, loss='categorical_crossentropy')
+
+    time_meter = AverageMeter()
+    end = time.time()
 
     for it in range(param['max_iter']):
         try:
@@ -225,14 +252,37 @@ def train(dataset, param):
             prob_o = f[:, 35: 70]
             y = np_utils.to_categorical(r, num_classes=param['triplet_num'])
             loss = training_model.train_on_batch([f, prob_s, prob_o], [y])
+
+            batch_time = time.time() - end
+            end = time.time()
+            time_meter.update(batch_time)
+            eta_seconds = time_meter.avg * (param['max_iter'] - it)
+            eta_string = str(timedelta(seconds=int(eta_seconds)))
+
             if it % param['display_freq'] == 0:
-                print('{} - iter: {}/{} - loss: {:.4f}'.format(
-                        strftime('%Y-%m-%d %H:%M:%S'), it, param['max_iter'], float(loss)))
+                logger.info(
+                    '  '.join(
+                        [
+                        'iter: [{iter}/{max_iter}]',
+                        'loss: {loss:.4f}',
+                        'eta: {eta}',
+                        'max mem: {memory:.0f}',
+                        ]
+                    ).format(
+                        iter=it,
+                        max_iter=param['max_iter'],
+                        loss=float(loss),
+                        eta=eta_string,
+                        memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
+                    )
+                )
+
             if it % param['save_freq'] == 0 and it > 0:
                 param['model_dump_file'] = '{}_weights_iter_{}.h5'.format(param['model_name'], it)
                 training_model.save_weights(os.path.join(get_model_path(), param['model_dump_file']))
+
         except KeyboardInterrupt:
-            print('Early Stop.')
+            logger.info('Early Stop.')
             break
     else:
         # save model
@@ -243,15 +293,15 @@ def train(dataset, param):
         json.dump(param, fout, indent=4)
 
 
-def predict(dataset, param):
+def predict(dataset, param, logger):
     param['phase'] = 'test'
-    data_generator = DataGenerator(dataset, param)
+    data_generator = DataGenerator(dataset, param, logger)
     # load model
     with h5py.File(os.path.join(get_model_path(), param['model_dump_file']), 'r') as fin:
         w = fin['/dense_1/dense_1/kernel:0'][:]
         b = fin['/dense_1/dense_1/bias:0'][:]
 
-    print('predicting short-term visual relation...')
+    logger.info('predicting short-term visual relation...')
     pbar = tqdm(total=len(data_generator.index))
     short_term_relations = dict()
     # do not support prefetching mode in test phase
