@@ -60,20 +60,10 @@ def load_relation_feature(data_dir):
 def train(data_dir, logger):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
-    param = dict()
-    param['model_name'] = 'baseline'
-    param['rng_seed'] = 1701
-    param['max_sampling_in_batch'] = 32
-    param['batch_size'] = 64
-    param['learning_rate'] = 0.001
-    param['weight_decay'] = 0.0
-    param['max_iter'] = 5000
-    param['display_freq'] = 1
-    param['save_freq'] = 5000
-    param['epsilon'] = 1e-8
-    param['pair_topk'] = 20
-    param['seg_topk'] = 200
-    logger.info(param)
+    with open(os.path.join(get_model_path(), 'default.json'), 'r') as fin:
+        param = json.load(fin)
+
+    logger.info(f'param: {param}')
 
     model.train(dataset, param, logger)
 
@@ -114,6 +104,7 @@ if __name__ == '__main__':
 
     logger = utils.setup_logger(name='vidvrd', save_dir='logs', filename=f'{utils.get_timestamp()}_vidvrd.txt')
     logger = logging.getLogger('vidvrd')
+    logger.info(f'args: {args}')
 
     if args.load_feature or args.train or args.detect:
         if args.load_feature:

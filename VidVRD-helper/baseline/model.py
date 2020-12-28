@@ -204,9 +204,10 @@ def train(dataset, param, logger):
     model = Model(param)
     model = model.cuda()
 
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'])
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'], weight_decay=param['weight_decay'])
     criterion = nn.CrossEntropyLoss()
 
+    loss_meter = AverageMeter()
     time_meter = AverageMeter()
     end = time.time()
 
@@ -223,7 +224,10 @@ def train(dataset, param, logger):
             optimizer.zero_grad()
             output = model([f, prob_s, prob_o])
             loss = criterion(output, r)
+            loss.backward()
             optimizer.step()
+
+            loss_meter.update(float(loss))
 
             batch_time = time.time() - end
             end = time.time()
@@ -236,30 +240,31 @@ def train(dataset, param, logger):
                     '  '.join(
                         [
                         'iter: [{iter}/{max_iter}]',
-                        'loss: {loss:.4f}',
+                        'loss: {loss:.4f} ({avg_loss:.4f})',
                         'eta: {eta}',
                         'max mem: {memory:.0f}',
                         ]
                     ).format(
                         iter=it,
                         max_iter=param['max_iter'],
-                        loss=float(loss),
+                        loss=loss_meter.val,
+                        avg_loss=loss_meter.avg,
                         eta=eta_string,
                         memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                     )
                 )
 
             if it % param['save_freq'] == 0 and it > 0:
-                param['model_dump_file'] = '{}_weights_iter_{}.h5'.format(param['model_name'], it)
-                torch.save(model, os.path.join(get_model_path(), param['model_dump_file']))
+                param['model_dump_file'] = '{}_weights_iter_{}.pt'.format(param['model_name'], it)
+                torch.save(model.state_dict(), os.path.join(get_model_path(), param['model_dump_file']))
 
         except KeyboardInterrupt:
             logger.info('Early Stop.')
             break
     else:
         # save model
-        param['model_dump_file'] = '{}_weights_iter_{}.h5'.format(param['model_name'], param['max_iter'])
-        torch.save(model, os.path.join(get_model_path(), param['model_dump_file']))
+        param['model_dump_file'] = '{}_weights_iter_{}.pt'.format(param['model_name'], param['max_iter'])
+        torch.save(model.state_dict(), os.path.join(get_model_path(), param['model_dump_file']))
     # save settings
     with open(os.path.join(get_model_path(), '{}_setting.json'.format(param['model_name'])), 'w') as fout:
         json.dump(param, fout, indent=4)
