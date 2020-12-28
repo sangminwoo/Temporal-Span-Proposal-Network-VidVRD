@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from datetime import datetime
+import numpy as np
 
 class AverageMeter:
 	def __init__(self):
@@ -39,3 +40,12 @@ def get_timestamp():
 	timestamp = datetime.timestamp(now)
 	st = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d-%H:%M:%S')
 	return st
+
+def normalize(x, axis=-1, order=2):
+    l2 = np.atleast_1d(np.linalg.norm(x, order, axis))
+    l2[l2 == 0] = 1
+    return x / np.expand_dims(l2, axis)
+
+def to_onehot(x, num_classes):
+    """ one-hot encodes a tensor """
+    return np.eye(num_classes, dtype='float32')[x]

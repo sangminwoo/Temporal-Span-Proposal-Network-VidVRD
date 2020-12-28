@@ -117,8 +117,11 @@ class FeatureExtractor(Process):
 
     def extract_feature(self, vid, fstart, fend, dry_run=False, verbose=False):
         vsig = get_segment_signature(vid, fstart, fend)
+        # vid=ILSVRC2015_train_00005003, fstart=0000, fend=0030
         path = get_feature_path('relation', vid)
+        # ./vidvrd-baseline-output/features/relation/ILSVRC2015_train_00005003
         path = os.path.join(path, '{}-{}.h5'.format(vsig, 'relation'))
+        # ./vidvrd-baseline-output/features/relation/ILSVRC2015_train_00005003/ILSVRC2015_train_00005003-0000-0030-relation.h5
         if os.path.exists(path):
             if dry_run:
                 return None, None, None, None

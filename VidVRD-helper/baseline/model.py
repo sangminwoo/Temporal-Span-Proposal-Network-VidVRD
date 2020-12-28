@@ -16,21 +16,11 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 
-from keras.models import Model
-from keras.layers import Input, Dense, Activation
-# from keras.initializers import RandomNormal, RandomUniform
-from keras.utils import np_utils
-from keras.engine.topology import Layer
-from keras.optimizers import SGD, Adam
-# from keras import backend as K
-import tensorflow as tf
-
 from .feature import FeatureExtractor
-from .utils import AverageMeter
+from .utils import AverageMeter, normalize, to_onehot
 from baseline import *
 
 _train_triplet_id = OrderedDict()
-
 
 def feature_preprocess(feat):
     """ 
@@ -43,31 +33,22 @@ def feature_preprocess(feat):
     # (since this feature is Bag-of-Word type, we l1-normalize it so that
     # each element represents the fraction instead of count)
 
-    # feat[:, 70: 1070] /= abs(feat[:, 70: 1070]).sum(axis=1).reshape(-1, 1)
-    # feat[:, 1070: 2070] /= abs(feat[:, 1070: 2070]).sum(axis=1).reshape(-1, 1)
-    # feat[:, 2070: 3070] /= abs(feat[:, 2070: 3070]).sum(axis=1).reshape(-1, 1)
-    # feat[:, 3070: 4070] /= abs(feat[:, 3070: 4070]).sum(axis=1).reshape(-1, 1)
-    feat[:, 70: 1070] = np_utils.normalize(feat[:, 70: 1070], axis=-1, order=1)
-    feat[:, 1070: 2070] = np_utils.normalize(feat[:, 1070: 2070], axis=-1, order=1)
-    feat[:, 2070: 3070] = np_utils.normalize(feat[:, 2070: 3070], axis=-1, order=1)
-    feat[:, 3070: 4070] = np_utils.normalize(feat[:, 3070: 4070], axis=-1, order=1)
+    feat[:, 70: 1070] = normalize(feat[:, 70: 1070], axis=-1, order=1)
+    feat[:, 1070: 2070] = normalize(feat[:, 1070: 2070], axis=-1, order=1)
+    feat[:, 2070: 3070] = normalize(feat[:, 2070: 3070], axis=-1, order=1)
+    feat[:, 3070: 4070] = normalize(feat[:, 3070: 4070], axis=-1, order=1)
 
     # object TrajectoryShape + HoG + HoF + MBH motion feature
-    # feat[:, 4070: 5070] /= abs(feat[:, 4070: 5070]).sum(axis=1).reshape(-1, 1)
-    # feat[:, 5070: 6070] /= abs(feat[:, 5070: 6070]).sum(axis=1).reshape(-1, 1)
-    # feat[:, 6070: 7070] /= abs(feat[:, 6070: 7070]).sum(axis=1).reshape(-1, 1)
-    # feat[:, 7070: 8070] /= abs(feat[:, 7070: 8070]).sum(axis=1).reshape(-1, 1)
-    feat[:, 4070: 5070] = np_utils.normalize(feat[:, 4070: 5070], axis=-1, order=1)
-    feat[:, 5070: 6070] = np_utils.normalize(feat[:, 5070: 6070], axis=-1, order=1)
-    feat[:, 6070: 7070] = np_utils.normalize(feat[:, 6070: 7070], axis=-1, order=1)
-    feat[:, 7070: 8070] = np_utils.normalize(feat[:, 7070: 8070], axis=-1, order=1)
+    feat[:, 4070: 5070] = normalize(feat[:, 4070: 5070], axis=-1, order=1)
+    feat[:, 5070: 6070] = normalize(feat[:, 5070: 6070], axis=-1, order=1)
+    feat[:, 6070: 7070] = normalize(feat[:, 6070: 7070], axis=-1, order=1)
+    feat[:, 7070: 8070] = normalize(feat[:, 7070: 8070], axis=-1, order=1)
 
     # relative posititon + size + motion feature
     # feat[:, 8070: 9070]
     # feat[:, 9070: 10070]
     # feat[:, 10070: 11070]
     return feat
-
 
 class DataGenerator(FeatureExtractor):
     """
@@ -87,12 +68,14 @@ class DataGenerator(FeatureExtractor):
             # initialize training triplet id
             _train_triplet_id.clear()
             triplets = dataset.get_triplets(split='train')
+            # triplets = {('car', 'faster', 'bus'), ('car', 'taller', 'antelope'), ...} len:2961
             for i, triplet in enumerate(triplets):
                 sub_name, pred_name, obj_name = triplet
                 sub_id = dataset.get_object_id(sub_name)
                 pred_id = dataset.get_predicate_id(pred_name)
                 obj_id = dataset.get_object_id(obj_name)
                 _train_triplet_id[(sub_id, pred_id, obj_id)] = i
+            # _train_triplet_id = OrderedDict([((2, 68, 4), 0), ((34, 131, 13), 1), ...]) len:2961
 
             self.short_rel_insts = defaultdict(list)
             video_indices = dataset.get_index(split='train')
@@ -184,47 +167,27 @@ class DataGenerator(FeatureExtractor):
 
         return feats[pos[:, 0]], pos[:, 1]
 
+class Model(nn.Module):
+    def __init__(self, param):
+        super(Model, self).__init__()
+        self.linear = nn.Linear(param['feature_dim'], param['predicate_num'])
+        self.sel_inds = np.asarray(list(_train_triplet_id.keys()), dtype='int32').T
+        # sel_inds = [[  2  34  21 ...  22   7   7]  : sub_id
+        #             [ 68 131  98 ...  49  18 117]  : pred_id
+        #             [  2  34   4 ...  22   6   1]] : obj_id
+        # len: 2961
 
-class SelectionLayer(Layer):
-    def __init__(self, sel_inds, **kwargs):
-        self.sel_inds = sel_inds
-        super(SelectionLayer, self).__init__(**kwargs)
+    def forward(self, inputs):
+        # inputs = [f, prob_s, prob_o]
+        x = self.linear(inputs[0]) # 64x11070 -> 64x132
+        r = self.select_layer(inputs[1], x, inputs[2])
+        return r
 
-    def build(self, input_shape):
-        super(SelectionLayer, self).build(input_shape)
-
-    def call(self, inputs):
-        # s = tf.gather(inputs[0], self.sel_inds[0], axis=1)
-        # p = tf.gather(inputs[1], self.sel_inds[1], axis=1)
-        # o = tf.gather(inputs[2], self.sel_inds[2], axis=1)
-
-        s = inputs[0][:, self.sel_inds[0]]
-        p = inputs[1][:, self.sel_inds[1]]
-        o = inputs[2][:, self.sel_inds[2]]
-
+    def select_layer(self, prob_s, p, prob_o):
+        s = prob_s[:, self.sel_inds[0]]
+        p = p[:, self.sel_inds[1]]
+        o = prob_o[:, self.sel_inds[2]]
         return s*p*o
-
-    def compute_output_shape(self, input_shape):
-        return (None, self.sel_inds.shape[1])
-
-
-def build_model(dataset, param, logger):
-    inp_f = Input(shape=(param['feature_dim'],), dtype='float32')
-    prob_s = Input(shape=(param['object_num'],), dtype='float32')
-    prob_o = Input(shape=(param['object_num'],), dtype='float32')
-
-    p = Dense(units=param['predicate_num'])(inp_f)
-
-    sel_inds = np.asarray(list(_train_triplet_id.keys()), dtype='int32').T
-    r = SelectionLayer(sel_inds)([prob_s, p, prob_o])
-    prob = Activation('softmax')(r)
-
-    model = Model(inputs=[inp_f, prob_s, prob_o], outputs=[prob])
-    model.summary()
-    logger.info('Trainable weights: {}'.format(model.trainable_weights))
-
-    return model
-
 
 def train(dataset, param, logger):
     param['phase'] = 'train'
@@ -238,20 +201,29 @@ def train(dataset, param, logger):
     param['triplet_num'] = len(_train_triplet_id)
     logger.info('Number of observed training triplets is {}'.format(param['triplet_num']))
 
-    training_model = build_model(dataset, param, logger)
-    adam = Adam(lr=param['learning_rate'])
-    training_model.compile(optimizer=adam, loss='categorical_crossentropy')
+    model = Model(param)
+    model = model.cuda()
+
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'])
+    criterion = nn.CrossEntropyLoss()
 
     time_meter = AverageMeter()
     end = time.time()
 
     for it in range(param['max_iter']):
         try:
-            f, r = data_generator.get_prefected_data()
-            prob_s = f[:, :35]
-            prob_o = f[:, 35: 70]
-            y = np_utils.to_categorical(r, num_classes=param['triplet_num'])
-            loss = training_model.train_on_batch([f, prob_s, prob_o], [y])
+            f, r = data_generator.get_prefected_data() # f: 64x11070 (batch_Size x feature_dim), r: 64 (batch_size)
+            prob_s = f[:, :35] # 64x35 (batch_size x object_num)
+            prob_o = f[:, 35: 70] # 64x35 (batch_size x object_num)
+            f = torch.tensor(f).cuda()
+            r = torch.tensor(r, dtype=torch.long).cuda()
+            prob_s = torch.tensor(prob_s).cuda()
+            prob_o = torch.tensor(prob_o).cuda()
+
+            optimizer.zero_grad()
+            output = model([f, prob_s, prob_o])
+            loss = criterion(output, r)
+            optimizer.step()
 
             batch_time = time.time() - end
             end = time.time()
@@ -279,7 +251,7 @@ def train(dataset, param, logger):
 
             if it % param['save_freq'] == 0 and it > 0:
                 param['model_dump_file'] = '{}_weights_iter_{}.h5'.format(param['model_name'], it)
-                training_model.save_weights(os.path.join(get_model_path(), param['model_dump_file']))
+                torch.save(model, os.path.join(get_model_path(), param['model_dump_file']))
 
         except KeyboardInterrupt:
             logger.info('Early Stop.')
@@ -287,7 +259,7 @@ def train(dataset, param, logger):
     else:
         # save model
         param['model_dump_file'] = '{}_weights_iter_{}.h5'.format(param['model_name'], param['max_iter'])
-        training_model.save_weights(os.path.join(get_model_path(), param['model_dump_file']))
+        torch.save(model, os.path.join(get_model_path(), param['model_dump_file']))
     # save settings
     with open(os.path.join(get_model_path(), '{}_setting.json'.format(param['model_name'])), 'w') as fout:
         json.dump(param, fout, indent=4)
