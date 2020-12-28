@@ -26,10 +26,10 @@ def feature_preprocess(feat):
     """ 
     Input feature is extracted according to Section 4.2 in the paper
     """
-    # subject classeme + object classeme
+    # subject classeme + object classeme (70)
     # feat[:, 0: 70]
 
-    # subject TrajectoryShape + HoG + HoF + MBH motion feature
+    # subject TrajectoryShape + HoG + HoF + MBH motion feature (8000)
     # (since this feature is Bag-of-Word type, we l1-normalize it so that
     # each element represents the fraction instead of count)
 
@@ -44,7 +44,7 @@ def feature_preprocess(feat):
     feat[:, 6070: 7070] = normalize(feat[:, 6070: 7070], axis=-1, order=1)
     feat[:, 7070: 8070] = normalize(feat[:, 7070: 8070], axis=-1, order=1)
 
-    # relative posititon + size + motion feature
+    # relative posititon + size + motion feature (3000)
     # feat[:, 8070: 9070]
     # feat[:, 9070: 10070]
     # feat[:, 10070: 11070]
@@ -56,7 +56,7 @@ class DataGenerator(FeatureExtractor):
     in the video segments that have multiple objects detected.
     """
     def __init__(self, dataset, param, logger, prefetch_count=2):
-        super(DataGenerator, self).__init__(dataset, prefetch_count)
+        super(DataGenerator, self).__init__(dataset, logger, prefetch_count)
         self.rng = np.random.RandomState(param['rng_seed'])
         self.batch_size = param['batch_size']
         self.max_sampling_in_batch = param['max_sampling_in_batch']
@@ -168,9 +168,14 @@ class DataGenerator(FeatureExtractor):
         return feats[pos[:, 0]], pos[:, 1]
 
 class Model(nn.Module):
-    def __init__(self, param):
+    def __init__(self, param, hidden_dim=128):
         super(Model, self).__init__()
-        self.linear = nn.Linear(param['feature_dim'], param['predicate_num'])
+        self.linear = nn.Sequential(
+                        nn.Linear(param['feature_dim'], hidden_dim),
+                        nn.ReLU(True),
+                        nn.Linear(hidden_dim, param['predicate_num'])
+                    )
+
         self.sel_inds = np.asarray(list(_train_triplet_id.keys()), dtype='int32').T
         # sel_inds = [[  2  34  21 ...  22   7   7]  : sub_id
         #             [ 68 131  98 ...  49  18 117]  : pred_id
@@ -178,16 +183,16 @@ class Model(nn.Module):
         # len: 2961
 
     def forward(self, inputs):
-        # inputs = [f, prob_s, prob_o]
-        x = self.linear(inputs[0]) # 64x11070 -> 64x132
-        r = self.select_layer(inputs[1], x, inputs[2])
-        return r
+        feature, prob_s, prob_o = inputs
+        prob_p = self.linear(feature) # 64x11070 -> 64x132
+        output = self.select_layer(prob_s, prob_p, prob_o)
+        return output
 
-    def select_layer(self, prob_s, p, prob_o):
+    def select_layer(self, prob_s, prob_p, prob_o):
         s = prob_s[:, self.sel_inds[0]]
-        p = p[:, self.sel_inds[1]]
+        p = prob_p[:, self.sel_inds[1]]
         o = prob_o[:, self.sel_inds[2]]
-        return s*p*o
+        return s*p*o # batch_size x 2961
 
 def train(dataset, param, logger):
     param['phase'] = 'train'
@@ -203,6 +208,7 @@ def train(dataset, param, logger):
 
     model = Model(param)
     model = model.cuda()
+    model.train()
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'], weight_decay=param['weight_decay'])
     criterion = nn.CrossEntropyLoss()
@@ -213,17 +219,18 @@ def train(dataset, param, logger):
 
     for it in range(param['max_iter']):
         try:
-            f, r = data_generator.get_prefected_data() # f: 64x11070 (batch_Size x feature_dim), r: 64 (batch_size)
-            prob_s = f[:, :35] # 64x35 (batch_size x object_num)
-            prob_o = f[:, 35: 70] # 64x35 (batch_size x object_num)
-            f = torch.tensor(f).cuda()
-            r = torch.tensor(r, dtype=torch.long).cuda()
+            feature, target = data_generator.get_prefected_data() # feature: 64x11070 (batch_Size x feature_dim), target: 64 (batch_size)
+            prob_s = feature[:, :35] # 64x35 (batch_size x object_num)
+            prob_o = feature[:, 35: 70] # 64x35 (batch_size x object_num)
+
+            feature = torch.tensor(feature).cuda()
+            target = torch.tensor(target, dtype=torch.long).cuda()
             prob_s = torch.tensor(prob_s).cuda()
             prob_o = torch.tensor(prob_o).cuda()
 
             optimizer.zero_grad()
-            output = model([f, prob_s, prob_o])
-            loss = criterion(output, r)
+            output = model([feature, prob_s, prob_o])
+            loss = criterion(output, target)
             loss.backward()
             optimizer.step()
 
@@ -256,7 +263,11 @@ def train(dataset, param, logger):
 
             if it % param['save_freq'] == 0 and it > 0:
                 param['model_dump_file'] = '{}_weights_iter_{}.pt'.format(param['model_name'], it)
-                torch.save(model.state_dict(), os.path.join(get_model_path(), param['model_dump_file']))
+                torch.save({'model': model.state_dict(),
+                            'optimizer': optimizer.state_dict(),
+                            'loss': loss_meter.avg,
+                            'iter': it},
+                            os.path.join(get_model_path(), param['model_dump_file']))
 
         except KeyboardInterrupt:
             logger.info('Early Stop.')
@@ -264,7 +275,11 @@ def train(dataset, param, logger):
     else:
         # save model
         param['model_dump_file'] = '{}_weights_iter_{}.pt'.format(param['model_name'], param['max_iter'])
-        torch.save(model.state_dict(), os.path.join(get_model_path(), param['model_dump_file']))
+        torch.save({'model': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'loss': loss_meter.avg,
+                    'iter': it},
+                    os.path.join(get_model_path(), param['model_dump_file']))
     # save settings
     with open(os.path.join(get_model_path(), '{}_setting.json'.format(param['model_name'])), 'w') as fout:
         json.dump(param, fout, indent=4)
@@ -274,9 +289,9 @@ def predict(dataset, param, logger):
     param['phase'] = 'test'
     data_generator = DataGenerator(dataset, param, logger)
     # load model
-    with h5py.File(os.path.join(get_model_path(), param['model_dump_file']), 'r') as fin:
-        w = fin['/dense_1/dense_1/kernel:0'][:]
-        b = fin['/dense_1/dense_1/bias:0'][:]
+    model = Model(param)
+    model.load_state_dict(torch.load(os.path.join(get_model_path(), param['model_dump_file'])))
+    model.eval()
 
     logger.info('predicting short-term visual relation...')
     pbar = tqdm(total=len(data_generator.index))
@@ -287,7 +302,7 @@ def predict(dataset, param, logger):
         # get all possible pairs and the respective features and annos
         index, pairs, feats, iou, trackid = data
         # make prediction
-        p = feats.dot(w) + b
+        p = model.linear(feats)
         s = feats[:, :35]
         o = feats[:, 35: 70]
         predictions = []
