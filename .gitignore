@@ -6,6 +6,7 @@ __pycache__/
 train_set_prooposals.json
 test_set_proposals.json
 videovrd_tracklets.json
+*.hdf5
 *.npy
 *.pt
 *.pth
