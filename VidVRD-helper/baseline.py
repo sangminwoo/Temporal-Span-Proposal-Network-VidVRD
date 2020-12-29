@@ -12,6 +12,7 @@ import h5py
 from dataset import VidVRD
 from baseline import segment_video, get_model_path
 from baseline import trajectory, feature, model, association, utils, preprocess
+from baseline.utils import setup_logger, get_timestamp
 
 def load_object_trajectory_proposal(data_dir):
     """
@@ -60,14 +61,22 @@ def load_relation_feature(data_dir):
             extractor.extract_feature(vid, fstart, fend, verbose=True)
 
 
-def preprocess_data(args, data_dir, logger):
+def preprocessing(args, data_dir, phase):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     with open('default.json', 'r') as fin:
         param = json.load(fin)
+    param['phase'] = phase
 
+    logger = setup_logger(name='preprocess', save_dir='logs', distributed_rank=0, filename=f'{get_timestamp()}_preprocess.txt')
+    logger = logging.getLogger('preprocess')
+    logger.info(f'args: {args}')
     logger.info(f'param: {param}')
-    feats, triplet_idx, pred_id = preprocess.preprocess_data(dataset, param, logger)
+
+    if param['phase'] == 'train':
+        feats, triplet_idx, pred_id = preprocess.preprocess_data(dataset, param, logger)
+    elif param['phase'] == 'test':
+        index, pairs, feats, iou, trackid = preprocess.preprocess_data(dataset, param, logger)
 
     try:
         path = os.path.join('./vidvrd-baseline-output', 'preprocessed_data')
@@ -76,9 +85,16 @@ def preprocess_data(args, data_dir, logger):
 
         logger.info('saving preprocessed data...')
         with h5py.File(os.path.join(path,'preprocessed_'+param['phase']+'_dataset.hdf5'), 'w') as f:
-             f['feats'] = feats
-             f['triplet_idx'] = triplet_idx
-             f['pred_id'] = pred_id
+            if param['phase'] == 'train':
+                f['feats'] = feats
+                f['triplet_idx'] = triplet_idx
+                f['pred_id'] = pred_id
+            elif param['phase'] == 'test':
+                f['index'] = index
+                f['pairs'] = pairs
+                f['feats'] = feats
+                f['iou'] = iou
+                f['trackid'] = trackid
 
         logger.info('successfully saved preprocessed data...')
     except:
@@ -97,23 +113,33 @@ def train(args, data_dir):
     mp.spawn(model.train, nprocs=args.ngpus_per_node, args=(args, dataset, param))
 
 
-def detect(data_dir, logger):
+def detect(data_dir):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
+
     with open(os.path.join(get_model_path(), 'baseline_setting.json'), 'r') as fin:
         param = json.load(fin)
-    short_term_relations = model.predict(dataset, param, logger)
-    # group short term relations by video
+
+    logger = setup_logger(name='detect', save_dir='logs', distributed_rank=0, filename=f'{get_timestamp()}_detect.txt')
+    logger = logging.getLogger('detect')
+    logger.info(f'args: {args}')
+    logger.info(f'param: {param}')
+
+    logger.info('predict short term relations')
+    short_term_relations = model.predict(dataset, param)
+
+    logger.info('group short term relations by video')
     video_st_relations = defaultdict(list)
     for index, st_rel in short_term_relations.items():
         vid = index[0]
         video_st_relations[vid].append((index, st_rel))
-    # video-level visual relation detection by relational association
-    logger.info('greedy relational association ...')
+
+    logger.info('video-level visual relation detection by greedy relational association')
     video_relations = dict()
     for vid in tqdm(video_st_relations.keys()):
         video_relations[vid] = association.greedy_relational_association(
                 dataset, video_st_relations[vid], max_traj_num_in_clip=100)
-    # save detection result
+
+    logger.info('saving detection result')
     with open(os.path.join(get_model_path(), 'baseline_relation_prediction.json'), 'w') as fout:
         output = {
             'version': 'VERSION 1.0',
@@ -126,13 +152,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='VidVRD baseline')
     parser.add_argument('--data_dir', type=str, help='dataset directory')
     parser.add_argument('--dataset', type=str, help='the dataset name for training')
-    parser.add_argument('--load_feature', action="store_true", default=False, help='Test loading precomputed features')
-    parser.add_argument('--train', action="store_true", default=False, help='Train model')
-    parser.add_argument('--detect', action="store_true", default=False, help='Detect video visual relation')
+    parser.add_argument('--load_feature', action='store_true', default=False, help='Test loading precomputed features')
+    parser.add_argument('--preprocess', action='store_true', default=False, help='Preprocess dataset')
+    parser.add_argument('--train', action='store_true', default=False, help='Train model')
+    parser.add_argument('--detect', action='store_true', default=False, help='Detect video visual relation')
+    parser.add_argument('--phase', type=str, default='train', help='train / test')
     parser.add_argument('--nodes', type=int, default=1, help='Total number of nodes')
     parser.add_argument('--ngpus_per_node', type=int, default=1, help='Number of gpus per node')
     parser.add_argument('--local_rank', default=0, type=int, help='ranking within the nodes')
-    parser.add_argument('--preprocess', action="store_true", default=False, help='Preprocess dataset')
     args = parser.parse_args()
 
     # distributed
@@ -144,11 +171,11 @@ if __name__ == '__main__':
         if args.load_feature:
             load_object_trajectory_proposal(os.path.join(args.data_dir, args.dataset))
             load_relation_feature(os.path.join(args.data_dir, args.dataset))
+        if args.preprocess:
+            preprocessing(args, os.path.join(args.data_dir, args.dataset), args.phase)
         if args.train:
             train(args, os.path.join(args.data_dir, args.dataset))
         if args.detect:
-            detect(os.path.join(args.data_dir, args.dataset), logger)
-        if args.preprocess:
-            preprocess_data(args, os.path.join(args.data_dir, args.dataset), logger)
+            detect(os.path.join(args.data_dir, args.dataset))
     else:
         parser.print_help()

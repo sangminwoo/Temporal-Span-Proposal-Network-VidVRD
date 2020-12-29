@@ -36,8 +36,8 @@ class Model(nn.Module):
 
 def train(gpu, args, dataset, param):
     rank = args.local_rank * args.ngpus_per_node + gpu
-    logger = setup_logger(name='vidvrd', save_dir='logs', distributed_rank=rank, filename=f'{get_timestamp()}_vidvrd.txt')
-    logger = logging.getLogger('vidvrd')
+    logger = setup_logger(name='train', save_dir='logs', distributed_rank=rank, filename=f'{get_timestamp()}_train.txt')
+    logger = logging.getLogger('train')
     logger.info(f'args: {args}')
     logger.info(f'param: {param}')
 
@@ -53,9 +53,9 @@ def train(gpu, args, dataset, param):
     param['object_num'] = dataset.get_object_num()
     param['predicate_num'] = dataset.get_predicate_num()
 
-    vrd_dataset = VRDDataset(param, logger)
-    data_sampler = DistributedSampler(vrd_dataset, num_replicas=args.world_size, rank=rank)
-    data_loader = DataLoader(dataset=vrd_dataset, batch_size=param['batch_size'], shuffle=False,
+    train_data = VRDDataset(param, logger)
+    data_sampler = DistributedSampler(train_data, num_replicas=args.world_size, rank=rank)
+    data_loader = DataLoader(dataset=train_data, batch_size=param['batch_size'], shuffle=False,
         num_workers=0, pin_memory=True, sampler=data_sampler)
 
     # logger.info('Feature dimension is {}'.format(param['feature_dim']))
@@ -88,11 +88,11 @@ def train(gpu, args, dataset, param):
                 loss.backward()
                 optimizer.step()
 
-                loss_meter.update(float(loss))
+                loss_meter.update(float(loss), output.shape[0])
 
                 batch_time = time.time() - end
                 end = time.time()
-                time_meter.update(batch_time)
+                time_meter.update(batch_time, output.shape[0])
                 eta_seconds = calculate_eta(time_meter.avg, epoch, param['max_epoch'], iteration, len(data_loader)) 
                 eta_string = str(timedelta(seconds=int(eta_seconds)))
 
@@ -143,21 +143,21 @@ def train(gpu, args, dataset, param):
 
 def predict(dataset, param, logger):
     param['phase'] = 'test'
-    data_generator = DataGenerator(dataset, param, logger)
+
     # load model
     model = Model(param)
     model.load_state_dict(torch.load(os.path.join(get_model_path(), param['model_dump_file'])))
     model.eval()
 
+    test_data = VRDDataset(param, logger)
+    data_loader = DataLoader(dataset=test_data, batch_size=param['batch_size'], shuffle=False,
+        num_workers=0, pin_memory=False)
+
     logger.info('predicting short-term visual relation...')
-    pbar = tqdm(total=len(data_generator.index))
+    pbar = tqdm(total=len(dataloader))
     short_term_relations = dict()
-    # do not support prefetching mode in test phase
-    data = data_generator.get_data()
-    while data:
-        # get all possible pairs and the respective features and annos
-        index, pairs, feats, iou, trackid = data
-        # make prediction
+
+    for iteration, (index, pairs, feats, iou, trackid) in enumerate(data_loader):
         prob_p = model(feats)
         prob_s = feats[:, :35]
         prob_o = feats[:, 35: 70]
@@ -178,8 +178,7 @@ def predict(dataset, param, logger):
         predictions = sorted(predictions, key=lambda x: x[0], reverse=True)[:param['seg_topk']]
         short_term_relations[index] = (predictions, iou, trackid)
 
-        data = data_generator.get_data()
         pbar.update(1)
-
     pbar.close()
+
     return short_term_relations

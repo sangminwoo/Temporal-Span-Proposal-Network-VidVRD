@@ -69,29 +69,41 @@ class Preprocess:
 			triplet_idx = []
 			pred_id = []
 			for i in range(len(self.index)):
-				self.logger.info(f'processing {i+1}th segment of training data')
+				self.logger.info(f'processing {i+1}th segment of train data')
 				vid, fstart, fend = self.index[i]
 				_feats, _triplet_idx, _pred_id = self._data_sampling(vid, fstart, fend)
 				_feats = self._feature_preprocess(_feats)
 				feats.append(_feats.astype(np.float32))
 				triplet_idx.append(_triplet_idx.astype(np.float32))
 				pred_id.append(_pred_id.astype(np.float32))
+
 			feats = np.concatenate(feats)
 			triplet_idx = np.concatenate(triplet_idx)
 			pred_id = np.concatenate(pred_id)
 			return feats, triplet_idx, pred_id
 		else:
-			try:
-				i = self.ind_iter.__next__()
-			except StopIteration: #, e
-				return None
-			index = self.index[i]
-			pairs, feats, iou, trackid = self._extract_feature(*index)
-			test_inds = [ind for ind, (traj1, traj2) in enumerate(pairs)
-					if trackid[traj1] < 0 and trackid[traj2] < 0]
-			pairs = pairs[test_inds]
-			feats = self._feature_preprocess(feats[test_inds])
-			feats = feats.astype(np.float32)
+			index = []
+			pairs = []
+			feats = []
+			iou = []
+			trackid = []
+			for i in range(len(self.index)):
+				self.logger.info(f'processing {i+1}th segment of test data')
+				_index = self.index[i] # vid, fstart, fend
+				_pairs, _feats, _iou, _trackid = self._extract_feature(*_index)
+				test_inds = [ind for ind, (traj1, traj2) in enumerate(_pairs)
+						if _trackid[traj1] < 0 and _trackid[traj2] < 0]
+				_pairs = _pairs[test_inds]
+				_feats = self._feature_preprocess(_feats[test_inds])
+				index.append(_index)
+				pairs.append(_pairs)
+				feats.append(_feats.astype(np.float32))
+				iou.append(_iou)
+				trackid.append(_trackid)
+
+			feats = np.concatenate(feats)
+			triplet_idx = np.concatenate(triplet_idx)
+			pred_id = np.concatenate(pred_id)
 			return index, pairs, feats, iou, trackid
 
 	def _data_sampling(self, vid, fstart, fend, iou_thres=0.5):
@@ -171,5 +183,9 @@ class Preprocess:
 
 def preprocess_data(dataset, param, logger):
 	processor = Preprocess(dataset, param, logger)
-	feats, triplet_idx, pred_id = processor.preprocess()
-	return feats, triplet_idx, pred_id
+	if param['phase'] == 'train':
+		feats, triplet_idx, pred_id = processor.preprocess()
+		return feats, triplet_idx, pred_id
+	elif param['phase'] == 'test':
+		index, pairs, feats, iou, trackid = processor.preprocess()
+		return index, pairs, feats, iou, trackid

@@ -57,11 +57,11 @@ def evaluate_relation(dataset, split, prediction, use_old_zeroshot_eval=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate a set of tasks related to video relation understanding.')
-    parser.add_argument('data_dir', type=str, help='dataset directory')
-    parser.add_argument('dataset', type=str, help='the dataset name for evaluation')
-    parser.add_argument('split', type=str, help='the split name for evaluation')
-    parser.add_argument('task', choices=['object', 'action', 'relation'], help='which task to evaluate')
-    parser.add_argument('prediction', type=str, help='Corresponding prediction JSON file')
+    parser.add_argument('--data_dir', type=str, help='dataset directory')
+    parser.add_argument('--dataset', type=str, help='the dataset name for evaluation')
+    parser.add_argument('--split', type=str, help='the split name for evaluation')
+    parser.add_argument('--task', choices=['object', 'action', 'relation'], help='which task to evaluate')
+    parser.add_argument('--prediction', type=str, help='Corresponding prediction JSON file')
     args = parser.parse_args()
 
     if args.dataset=='vidvrd':
