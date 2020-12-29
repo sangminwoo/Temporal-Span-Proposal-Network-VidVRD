@@ -20,7 +20,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from .comm import synchronize
 # from .feature import FeatureExtractor
-from .utils import AverageMeter, setup_logger, get_timestamp, calculate_eta, normalize, to_onehot
+from .utils import AverageMeter, setup_logger, get_timestamp, calculate_eta, normalize, to_onehot, load_checkpoint
 # from .dataset import VRDDataset
 from .preprocessed_dataset import VRDDataset
 from baseline import *
@@ -122,7 +122,7 @@ def train(gpu, args, dataset, param):
                 torch.save({'model': model.state_dict(),
                             'optimizer': optimizer.state_dict(),
                             'loss': loss_meter.avg,
-                            'epoch': epoch},
+                            'epoch': epoch+1},
                             os.path.join(get_model_path(), param['model_dump_file']))
 
         except KeyboardInterrupt:
@@ -134,7 +134,7 @@ def train(gpu, args, dataset, param):
         torch.save({'model': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'loss': loss_meter.avg,
-                    'epoch': epoch},
+                    'epoch': epoch+1},
                     os.path.join(get_model_path(), param['model_dump_file']))
     # save settings
     with open(os.path.join(get_model_path(), '{}_setting.json'.format(param['model_name'])), 'w') as fout:
@@ -146,7 +146,11 @@ def predict(dataset, param, logger):
 
     # load model
     model = Model(param)
-    model.load_state_dict(torch.load(os.path.join(get_model_path(), param['model_dump_file'])))
+    checkpoint = torch.load(os.path.join(get_model_path(), param['model_dump_file']))
+    load_checkpoint(model, checkpoint['model'])
+    logger.info(f"=> checkpoint succesfully loaded")
+    logger.info(f"=> epoch: {checkpoint['epoch']}")
+    logger.info(f"=> average loss:{checkpoint['loss']:.4f}")
     model.eval()
 
     test_data = VRDDataset(param, logger)

@@ -48,11 +48,10 @@ class FeatureExtractor(Process):
     Generate feature for a (vid, fstart, fend) every call
     Class for prefetching data in a separate process
     """
-    def __init__(self, dataset, logger, prefetch_count=2):
+    def __init__(self, dataset, prefetch_count=2):
         super(FeatureExtractor, self).__init__()
         self.dataset = dataset
         self.prefetch_count = prefetch_count
-        self.logger = logger
 
     def _init_pool(self):
         prefetch_count = self.prefetch_count
@@ -72,18 +71,18 @@ class FeatureExtractor(Process):
             atexit.register(self._cleanup)
             self.start()
         else:
-            self.logger.info('Prefetching disabled.')
+            print('Prefetching disabled.')
 
     def _cleanup(self):
         if self.prefetch_count > 0:
-            self.logger.info('Terminating DataFetcher')
+            print('Terminating DataFetcher')
             self.terminate()
             self.join()
 
     def run(self):
         # Pass SIGINT to the parent process
         signal.signal(signal.SIGINT, signal.SIG_DFL)
-        self.logger.info('DataFetcher started')
+        print('DataFetcher started')
         while True:
             blobs = self.get_data()
             pool_ind = self._free_queue.get()
@@ -108,7 +107,7 @@ class FeatureExtractor(Process):
 
     def get_data_shapes(self):
         if not hasattr(self, 'shapes'):
-            self.logger.info('Getting data to measure the shapes...')
+            print('Getting data to measure the shapes...')
             data = self.get_data()
             self.shapes = tuple(d.shape for d in data)
         return self.shapes
@@ -128,7 +127,7 @@ class FeatureExtractor(Process):
                 return None, None, None, None
             else:
                 if verbose:
-                    self.logger.info('loading relation feature for video segment {}...'.format(vsig))
+                    print('loading relation feature for video segment {}...'.format(vsig))
                 with h5py.File(path, 'r') as fin:
                     # N object trajectory proposals, whose trackids are all -1
                     # and M groundtruth object trajectories, whose trackids are provided by dataset
@@ -142,5 +141,5 @@ class FeatureExtractor(Process):
                 return pairs, feats, iou, trackid
         else:
             if verbose:
-                self.logger.info('no relation feature for video segment  {}'.format(vsig))
+                print('no relation feature for video segment  {}'.format(vsig))
             return None

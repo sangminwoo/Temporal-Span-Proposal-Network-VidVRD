@@ -78,27 +78,29 @@ def preprocessing(args, data_dir, phase):
     elif param['phase'] == 'test':
         index, pairs, feats, iou, trackid = preprocess.preprocess_data(dataset, param, logger)
 
-    try:
-        path = os.path.join('./vidvrd-baseline-output', 'preprocessed_data')
-        if not os.path.exists(path):
-            os.makedirs(path)
+    path = os.path.join('./vidvrd-baseline-output', 'preprocessed_data')
+    if not os.path.exists(path):
+        os.makedirs(path)
 
-        logger.info('saving preprocessed data...')
-        with h5py.File(os.path.join(path,'preprocessed_'+param['phase']+'_dataset.hdf5'), 'w') as f:
-            if param['phase'] == 'train':
-                f['feats'] = feats
-                f['triplet_idx'] = triplet_idx
-                f['pred_id'] = pred_id
-            elif param['phase'] == 'test':
-                f['index'] = index
-                f['pairs'] = pairs
-                f['feats'] = feats
-                f['iou'] = iou
-                f['trackid'] = trackid
+    logger.info('saving preprocessed data...')
+    with h5py.File(os.path.join(path,'preprocessed_'+param['phase']+'_dataset.hdf5'), 'a') as f:
+        if param['phase'] == 'train':
+            f['feats'] = feats
+            f['triplet_idx'] = triplet_idx
+            f['pred_id'] = pred_id
+        elif param['phase'] == 'test':
+            # f['index'] = index
+            f['pairs'] = pairs
+            f['feats'] = feats
+            f['trackid'] = trackid
 
-        logger.info('successfully saved preprocessed data...')
-    except:
-        logger.info('failed to save data')
+    if param['phase'] == 'test':
+        data = {'index': index,
+                'iou': iou}
+        with open(os.path.join(path, 'preprocessed_'+param['phase']+'_dataset.json'), 'a') as f:
+            json.dump(data, f)
+
+    logger.info('successfully saved preprocessed data...')
 
 def train(args, data_dir):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
@@ -109,6 +111,11 @@ def train(args, data_dir):
     # param['batch_size'] = int(param['batch_size'] / args.ngpus_per_node)
     # param['max_sampling_in_batch'] = int(param['max_sampling_in_batch'] / args.ngpus_per_node)
     # param['num_workers'] = int(param['num_workers'] / args.ngpus_per_node)
+
+    # distributed
+    args.world_size = args.ngpus_per_node * args.nodes
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29500'
 
     mp.spawn(model.train, nprocs=args.ngpus_per_node, args=(args, dataset, param))
 
@@ -125,7 +132,7 @@ def detect(data_dir):
     logger.info(f'param: {param}')
 
     logger.info('predict short term relations')
-    short_term_relations = model.predict(dataset, param)
+    short_term_relations = model.predict(dataset, param, logger)
 
     logger.info('group short term relations by video')
     video_st_relations = defaultdict(list)
@@ -161,11 +168,6 @@ if __name__ == '__main__':
     parser.add_argument('--ngpus_per_node', type=int, default=1, help='Number of gpus per node')
     parser.add_argument('--local_rank', default=0, type=int, help='ranking within the nodes')
     args = parser.parse_args()
-
-    # distributed
-    args.world_size = args.ngpus_per_node * args.nodes
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '29500'
 
     if args.load_feature or args.train or args.detect or args.preprocess:
         if args.load_feature:

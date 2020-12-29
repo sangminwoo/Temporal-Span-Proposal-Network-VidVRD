@@ -1,5 +1,6 @@
 import numpy as np
 import h5py
+import json
 from itertools import product, cycle
 from collections import defaultdict, OrderedDict
 from torch.utils.data import Dataset
@@ -98,12 +99,14 @@ class Preprocess:
 				index.append(_index)
 				pairs.append(_pairs)
 				feats.append(_feats.astype(np.float32))
-				iou.append(_iou)
+				iou.append(_iou.tolist())
 				trackid.append(_trackid)
 
+			# index = np.concatenate(index)
+			pairs = np.concatenate(pairs)
 			feats = np.concatenate(feats)
-			triplet_idx = np.concatenate(triplet_idx)
-			pred_id = np.concatenate(pred_id)
+			# iou = np.concatenate(iou)
+			trackid = np.concatenate(trackid)
 			return index, pairs, feats, iou, trackid
 
 	def _data_sampling(self, vid, fstart, fend, iou_thres=0.5):

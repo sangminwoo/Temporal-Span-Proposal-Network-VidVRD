@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import h5py
+import json
 from torch.utils.data import Dataset
 
 class VRDDataset(Dataset):
@@ -10,10 +11,10 @@ class VRDDataset(Dataset):
 		self.logger = logger
 		self.logger.info('loading preprocessed video segments for {}...'.format(self.phase))
 		
-		path = os.path.join('vidvrd-baseline-output', 'preprocessed_data', 'preprocessed_'+self.phase+'_dataset.hdf5')
-		self.dataset = h5py.File(path, 'r')
-
-		if self.phase == 'train':	
+		path = os.path.join('vidvrd-baseline-output', 'preprocessed_data')
+		
+		if self.phase == 'train':
+			self.dataset = h5py.File(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.hdf5'), 'r')
 			self.feats = self.dataset['feats']
 			self.triplet_idx = self.dataset['triplet_idx']
 			self.pred_id = self.dataset['pred_id']
@@ -21,13 +22,19 @@ class VRDDataset(Dataset):
 			assert len(self.feats) == len(self.triplet_idx) == len(self.pred_id)
 			self.logger.info('total {} preprocessed relation instance proposals'.format(len(self.feats)))
 		elif self.phase == 'test':
-			self.index = self.dataset['index']
-			self.pairs = self.dataset['pairs']
-			self.feats = self.dataset['feats']
-			self.iou = self.dataset['iou']
-			self.trackid = self.dataset['trackid']
+			self.dataset1 = h5py.File(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.hdf5'), 'r')
+			with open(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.json'), 'r') as f:
+				self.dataset2 = json.load(f)
+			self.index = self.dataset2['index']
+			self.pairs = self.dataset1['pairs']
+			self.feats = self.dataset1['feats']
+			self.iou = self.dataset2['iou']
+			self.trackid = self.dataset1['trackid']
 		else:
 			raise ValueError('Unknown phase: {}'.format(self.phase))
+
+		print(self.index)
+		print(self.)
 
 	def __len__(self):
 		return len(self.feats)
