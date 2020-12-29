@@ -5,10 +5,12 @@ import argparse
 import _pickle as pkl
 from collections import defaultdict
 from tqdm import tqdm
+import torch.multiprocessing as mp
+import numpy as np
 
 from dataset import VidVRD
 from baseline import segment_video, get_model_path
-from baseline import trajectory, feature, model, association, utils
+from baseline import trajectory, feature, model, association, utils, preprocess
 
 def load_object_trajectory_proposal(data_dir):
     """
@@ -57,15 +59,41 @@ def load_relation_feature(data_dir):
             extractor.extract_feature(vid, fstart, fend, verbose=True)
 
 
-def train(data_dir, logger):
+def preprocess_data(args, data_dir, logger):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
-    with open(os.path.join(get_model_path(), 'default.json'), 'r') as fin:
+    with open('default.json', 'r') as fin:
         param = json.load(fin)
 
     logger.info(f'param: {param}')
+    feats, triplet_idx, pred_id = preprocess.preprocess_data(dataset, param, logger)
 
-    model.train(dataset, param, logger)
+    try:
+        path = os.path.join('./vidvrd-baseline-output', 'preprocessed_data')
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        logger.info('saving preprocessed data...')
+        np.save(os.path.join(path, 'feats'), feats)
+        np.save(os.path.join(path, 'triplet_idx'), triplet_idx)
+        np.save(os.path.join(path, 'pred_id'), pred_id)
+        logger.info('successfully saved preprocessed data...')
+    except:
+        logger.info('failed to save data')
+
+def train(args, data_dir, logger):
+    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
+
+    with open('default.json', 'r') as fin:
+        param = json.load(fin)
+
+    # param['batch_size'] = int(param['batch_size'] / args.ngpus_per_node)
+    # param['max_sampling_in_batch'] = int(param['max_sampling_in_batch'] / args.ngpus_per_node)
+    # param['num_workers'] = int(param['num_workers'] / args.ngpus_per_node)
+
+    logger.info(f'param: {param}')
+
+    mp.spawn(model.train, nprocs=args.ngpus_per_node, args=(args, dataset, param, logger))
 
 
 def detect(data_dir, logger):
@@ -100,19 +128,30 @@ if __name__ == '__main__':
     parser.add_argument('--load_feature', action="store_true", default=False, help='Test loading precomputed features')
     parser.add_argument('--train', action="store_true", default=False, help='Train model')
     parser.add_argument('--detect', action="store_true", default=False, help='Detect video visual relation')
+    parser.add_argument('--nodes', type=int, default=1, help='Total number of nodes')
+    parser.add_argument('--ngpus_per_node', type=int, default=1, help='Number of gpus per node')
+    parser.add_argument('--local_rank', default=0, type=int, help='ranking within the nodes')
+    parser.add_argument('--preprocess', action="store_true", default=False, help='Preprocess dataset')
     args = parser.parse_args()
+
+    # distributed
+    args.world_size = args.ngpus_per_node * args.nodes
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29500'
 
     logger = utils.setup_logger(name='vidvrd', save_dir='logs', filename=f'{utils.get_timestamp()}_vidvrd.txt')
     logger = logging.getLogger('vidvrd')
     logger.info(f'args: {args}')
 
-    if args.load_feature or args.train or args.detect:
+    if args.load_feature or args.train or args.detect or args.preprocess:
         if args.load_feature:
             load_object_trajectory_proposal(os.path.join(args.data_dir, args.dataset))
             load_relation_feature(os.path.join(args.data_dir, args.dataset))
         if args.train:
-            train(os.path.join(args.data_dir, args.dataset), logger)
+            train(args, os.path.join(args.data_dir, args.dataset), logger)
         if args.detect:
             detect(os.path.join(args.data_dir, args.dataset), logger)
+        if args.preprocess:
+            preprocess_data(args, os.path.join(args.data_dir, args.dataset), logger)
     else:
         parser.print_help()

@@ -12,12 +12,17 @@ from tqdm import tqdm
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
+
+import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
+from .comm import synchronize
 from .feature import FeatureExtractor
 from .utils import AverageMeter, normalize, to_onehot
+from .dataset import VRDDataset
 from baseline import *
 
 _train_triplet_id = OrderedDict()
@@ -88,11 +93,11 @@ class DataGenerator(FeatureExtractor):
                         if self.extract_feature(vid, fstart, fend, dry_run=True):
                             sub_name, pred_name, obj_name = rel_inst['triplet']
                             self.short_rel_insts[(vid, fstart, fend)].append((
-                                rel_inst['subject_tid'],
-                                rel_inst['object_tid'],
-                                dataset.get_object_id(sub_name),
-                                dataset.get_predicate_id(pred_name),
-                                dataset.get_object_id(obj_name)
+                                rel_inst['subject_tid'], # 0th
+                                rel_inst['object_tid'], # 1st
+                                dataset.get_object_id(sub_name), # 2: car
+                                dataset.get_predicate_id(pred_name), # 68: faster
+                                dataset.get_object_id(obj_name) # 4: bus
                             ))
             self.index = list(self.short_rel_insts.keys())
             self.ind_iter = cycle(range(len(self.index)))
@@ -113,21 +118,24 @@ class DataGenerator(FeatureExtractor):
 
     def get_data(self):
         if self.phase == 'train':
-            f = []
-            r = []
+            feats = []
+            triplet_idx = []
+            pred_id = [] ###
             remaining_size = self.batch_size
             while remaining_size > 0:
                 i = self.ind_iter.__next__()
                 vid, fstart, fend = self.index[i]
                 sample_num = np.minimum(remaining_size, self.max_sampling_in_batch)
-                _f, _r = self._data_sampling(vid, fstart, fend, sample_num)
-                remaining_size -= _f.shape[0]
-                _f = feature_preprocess(_f)
-                f.append(_f.astype(np.float32))
-                r.append(_r.astype(np.float32))
-            f = np.concatenate(f)
-            r = np.concatenate(r)
-            return f, r
+                _feats, _triplet_idx, _pred_id = self._data_sampling(vid, fstart, fend, sample_num)
+                remaining_size -= _feats.shape[0]
+                _feats = feature_preprocess(_feats)
+                feats.append(_feats.astype(np.float32))
+                triplet_idx.append(_triplet_idx.astype(np.float32))
+                pred_id.append(_pred_id.astype(np.float32)) ###
+            feats = np.concatenate(feats)
+            triplet_idx = np.concatenate(triplet_idx)
+            pred_id = np.concatenate(pred_id) ###
+            return feats, triplet_idx, pred_id
         else:
             try:
                 i = self.ind_iter.__next__()
@@ -149,14 +157,14 @@ class DataGenerator(FeatureExtractor):
                 for find, (traj1, traj2) in enumerate(pairs)])
         tid_to_ind = dict([(tid, ind) for ind, tid in enumerate(trackid) if tid >= 0])
 
-        pos = np.empty((0, 2), dtype = np.int32)
+        pos = np.empty((0, 3), dtype = np.int32)
         for tid1, tid2, s, p, o in self.short_rel_insts[(vid, fstart, fend)]:
             if tid1 in tid_to_ind and tid2 in tid_to_ind:
                 iou1 = iou[:, tid_to_ind[tid1]]
                 iou2 = iou[:, tid_to_ind[tid2]]
                 pos_inds1 = np.where(iou1 >= iou_thres)[0]
                 pos_inds2 = np.where(iou2 >= iou_thres)[0]
-                tmp = [(pair_to_find[(traj1, traj2)], _train_triplet_id[(s, p, o)])
+                tmp = [(pair_to_find[(traj1, traj2)], _train_triplet_id[(s, p, o)], p)
                         for traj1, traj2 in product(pos_inds1, pos_inds2) if traj1 != traj2]
                 if len(tmp) > 0:
                     pos = np.concatenate((pos, tmp))
@@ -165,84 +173,79 @@ class DataGenerator(FeatureExtractor):
         if pos.shape[0] > 0:
             pos = pos[np.random.choice(pos.shape[0], num_pos_in_this, replace=False)]
 
-        return feats[pos[:, 0]], pos[:, 1]
+        return feats[pos[:, 0]], pos[:, 1], pos[:, 2]
 
 class Model(nn.Module):
-    def __init__(self, param, hidden_dim=128):
+    def __init__(self, param):
         super(Model, self).__init__()
-        self.linear = nn.Sequential(
-                        nn.Linear(param['feature_dim'], hidden_dim),
-                        nn.ReLU(True),
-                        nn.Linear(hidden_dim, param['predicate_num'])
-                    )
+        self.linear = nn.Linear(param['feature_dim'], param['predicate_num'])
 
-        self.sel_inds = np.asarray(list(_train_triplet_id.keys()), dtype='int32').T
-        # sel_inds = [[  2  34  21 ...  22   7   7]  : sub_id
-        #             [ 68 131  98 ...  49  18 117]  : pred_id
-        #             [  2  34   4 ...  22   6   1]] : obj_id
-        # len: 2961
-
-    def forward(self, inputs):
-        feature, prob_s, prob_o = inputs
-        prob_p = self.linear(feature) # 64x11070 -> 64x132
-        output = self.select_layer(prob_s, prob_p, prob_o)
+    def forward(self, feats):
+        output = self.linear(feats) # 64x11070 -> 64x132
         return output
 
-    def select_layer(self, prob_s, prob_p, prob_o):
-        s = prob_s[:, self.sel_inds[0]]
-        p = prob_p[:, self.sel_inds[1]]
-        o = prob_o[:, self.sel_inds[2]]
-        return s*p*o # batch_size x 2961
+def train(gpu, args, dataset, param, logger):
+    rank = args.local_rank * args.ngpus_per_node + gpu
+    dist.init_process_group(
+        backend='nccl',
+        init_method='env://',
+        world_size=args.world_size,
+        rank=rank
+    )
+    # synchronize()
 
-def train(dataset, param, logger):
     param['phase'] = 'train'
     param['object_num'] = dataset.get_object_num()
     param['predicate_num'] = dataset.get_predicate_num()
 
-    data_generator = DataGenerator(dataset, param, logger)
+    vrd_dataset = VRDDataset(dataset, param, logger)
+    data_sampler = DistributedSampler(vrd_dataset, num_replicas=args.world_size, rank=rank)
+    data_loader = DataLoader(dataset=vrd_dataset, batch_size=param['batch_size'], shuffle=False,
+        num_workers=param['num_workers'], pin_memory=True, sampler=data_sampler)
+    # data_generator = DataGenerator(dataset, param, logger)
     # data_generator = DataGenerator(dataset, param, prefetch_count = 0)
-    param['feature_dim'] = data_generator.get_data_shapes()[0][1]
+    # param['feature_dim'] = data_generator.get_data_shapes()[0][1]
     logger.info('Feature dimension is {}'.format(param['feature_dim']))
-    param['triplet_num'] = len(_train_triplet_id)
+    param['triplet_num'] = len(vrd_dataset._train_triplet_id)
     logger.info('Number of observed training triplets is {}'.format(param['triplet_num']))
 
     model = Model(param)
-    model = model.cuda()
+    torch.cuda.set_device(gpu)
+    model = model.cuda(gpu)
+    model = DistributedDataParallel(model, device_ids=[gpu])
     model.train()
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'], weight_decay=param['weight_decay'])
+    # optimizer = torch.optim.SGD(params=model.parameters(), momentum=param['momentum'], lr=param['learning_rate'], weight_decay=param['weight_decay'])
     criterion = nn.CrossEntropyLoss()
 
     loss_meter = AverageMeter()
     time_meter = AverageMeter()
     end = time.time()
 
-    for it in range(param['max_iter']):
+    for iteration in range(param['max_iter']):
         try:
-            feature, target = data_generator.get_prefected_data() # feature: 64x11070 (batch_Size x feature_dim), target: 64 (batch_size)
-            prob_s = feature[:, :35] # 64x35 (batch_size x object_num)
-            prob_o = feature[:, 35: 70] # 64x35 (batch_size x object_num)
+            # feats, triplet_idx, pred_id = data_generator.get_prefected_data() # feats: 64x11070 (batch_Size x feature_dim), target: 64 (batch_size)
+            for idx, (feats, _, pred_id) in enumerate(data_loader):
+                print('feats', feats.shape)
+                feats = torch.tensor(feats).cuda(non_blocking=True)
+                target = torch.tensor(pred_id, dtype=torch.long).cuda(non_blocking=True)
 
-            feature = torch.tensor(feature).cuda()
-            target = torch.tensor(target, dtype=torch.long).cuda()
-            prob_s = torch.tensor(prob_s).cuda()
-            prob_o = torch.tensor(prob_o).cuda()
+                optimizer.zero_grad()
+                output = model(feats)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
 
-            optimizer.zero_grad()
-            output = model([feature, prob_s, prob_o])
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
-
-            loss_meter.update(float(loss))
+                loss_meter.update(float(loss))
 
             batch_time = time.time() - end
             end = time.time()
             time_meter.update(batch_time)
-            eta_seconds = time_meter.avg * (param['max_iter'] - it)
+            eta_seconds = time_meter.avg * (param['max_iter'] - iteration)
             eta_string = str(timedelta(seconds=int(eta_seconds)))
 
-            if it % param['display_freq'] == 0:
+            if iteration % param['display_freq'] == 0 and gpu == 0:
                 logger.info(
                     '  '.join(
                         [
@@ -252,7 +255,7 @@ def train(dataset, param, logger):
                         'max mem: {memory:.0f}',
                         ]
                     ).format(
-                        iter=it,
+                        iter=iteration,
                         max_iter=param['max_iter'],
                         loss=loss_meter.val,
                         avg_loss=loss_meter.avg,
@@ -261,12 +264,12 @@ def train(dataset, param, logger):
                     )
                 )
 
-            if it % param['save_freq'] == 0 and it > 0:
-                param['model_dump_file'] = '{}_weights_iter_{}.pt'.format(param['model_name'], it)
+            if iteration % param['save_freq'] == 0 and iteration > 0:
+                param['model_dump_file'] = '{}_weights_iter_{}.pt'.format(param['model_name'], iteration)
                 torch.save({'model': model.state_dict(),
                             'optimizer': optimizer.state_dict(),
                             'loss': loss_meter.avg,
-                            'iter': it},
+                            'iter': iteration},
                             os.path.join(get_model_path(), param['model_dump_file']))
 
         except KeyboardInterrupt:
@@ -302,15 +305,15 @@ def predict(dataset, param, logger):
         # get all possible pairs and the respective features and annos
         index, pairs, feats, iou, trackid = data
         # make prediction
-        p = model.linear(feats)
-        s = feats[:, :35]
-        o = feats[:, 35: 70]
+        prob_p = model(feats)
+        prob_s = feats[:, :35]
+        prob_o = feats[:, 35: 70]
         predictions = []
         for i in range(len(pairs)):
-            top_s_ind = np.argsort(s[i])[-param['pair_topk']:]
-            top_p_ind = np.argsort(p[i])[-param['pair_topk']:]
-            top_o_ind = np.argsort(o[i])[-param['pair_topk']:]
-            score = s[i][top_s_ind, None, None]*p[i][None, top_p_ind, None]*o[i][None, None, top_o_ind]
+            top_s_ind = np.argsort(prob_s[i])[-param['pair_topk']:]
+            top_p_ind = np.argsort(prob_p[i])[-param['pair_topk']:]
+            top_o_ind = np.argsort(prob_o[i])[-param['pair_topk']:]
+            score = prob_s[i][top_s_ind, None, None]*prob_p[i][None, top_p_ind, None]*prob_o[i][None, None, top_o_ind]
             top_flat_ind = np.argsort(score, axis = None)[-param['pair_topk']:]
             top_score = score.ravel()[top_flat_ind]
             top_s, top_p, top_o = np.unravel_index(top_flat_ind, score.shape)
