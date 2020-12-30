@@ -22,19 +22,20 @@ class VRDDataset(Dataset):
 			assert len(self.feats) == len(self.triplet_idx) == len(self.pred_id)
 			self.logger.info('total {} preprocessed relation instance proposals'.format(len(self.feats)))
 		elif self.phase == 'test':
-			self.dataset1 = h5py.File(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.hdf5'), 'r')
-			with open(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.json'), 'r') as f:
-				self.dataset2 = json.load(f)
-			self.index = self.dataset2['index']
-			self.pairs = self.dataset1['pairs']
-			self.feats = self.dataset1['feats']
-			self.iou = self.dataset2['iou']
-			self.trackid = self.dataset1['trackid']
+			self.dataset = h5py.File(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.hdf5'), 'r')
+			self.pairs = self.dataset['pairs']
+			self.feats = self.dataset['feats']
+			# self.trackid = self.dataset['trackid']
+
+			# with open(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.json'), 'r') as f:
+			# 	self.dataset2 = json.load(f)
+			# self.index = self.dataset2['index']
+			# self.iou = self.dataset2['iou']
+
+			assert len(self.pairs) == len(self.feats)
+			self.logger.info('total {} preprocessed relation instance proposals'.format(len(self.feats)))
 		else:
 			raise ValueError('Unknown phase: {}'.format(self.phase))
-
-		print(self.index)
-		print(self.)
 
 	def __len__(self):
 		return len(self.feats)
@@ -43,4 +44,5 @@ class VRDDataset(Dataset):
 		if self.phase == 'train':
 			return self.feats[idx], self.triplet_idx[idx], self.pred_id[idx]
 		else:
-			return self.index[idx], self.pairs[idx], self.feats[idx], self.iou[idx], self.trackid[idx]
+			return self.pairs[idx], self.feats[idx]
+			# return self.index[idx], self.pairs[idx], self.feats[idx], self.iou[idx], self.trackid[idx]

@@ -9,19 +9,20 @@ import h5py
 from tqdm import tqdm
 
 import torch
-import torch.backends.cudnn as cudnn
 import torch.nn as nn
-
+import torch.nn.functional as F
+import torch.backends.cudnn as cudnn
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
-from .comm import synchronize
-# from .feature import FeatureExtractor
-from .utils import AverageMeter, setup_logger, get_timestamp, calculate_eta, normalize, to_onehot, load_checkpoint
 # from .dataset import VRDDataset
+# from .feature import FeatureExtractor
+from .comm import synchronize
+from .utils import AverageMeter, setup_logger, get_timestamp, calculate_eta, normalize, to_onehot, load_checkpoint
+# from .rel_proposal import rel_proposal_loss
 from .preprocessed_dataset import VRDDataset
 from baseline import *
 
@@ -32,6 +33,7 @@ class Model(nn.Module):
 
     def forward(self, feats):
         output = self.linear(feats) # 64x11070 -> 64x132
+        output = F.sigmoid(output)
         return output
 
 def train(gpu, args, dataset, param):
@@ -69,7 +71,7 @@ def train(gpu, args, dataset, param):
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'], weight_decay=param['weight_decay'])
     # optimizer = torch.optim.SGD(params=model.parameters(), momentum=param['momentum'], lr=param['learning_rate'], weight_decay=param['weight_decay'])
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCELoss()
 
     loss_meter = AverageMeter()
     time_meter = AverageMeter()
@@ -83,7 +85,7 @@ def train(gpu, args, dataset, param):
                 target = pred_id.long().to(gpu)
 
                 optimizer.zero_grad()
-                output = model(feats)
+                output = model(feats) # 64x132
                 loss = criterion(output, target)
                 loss.backward()
                 optimizer.step()
@@ -154,35 +156,91 @@ def predict(dataset, param, logger):
     model.eval()
 
     test_data = VRDDataset(param, logger)
-    data_loader = DataLoader(dataset=test_data, batch_size=param['batch_size'], shuffle=False,
+    data_loader = DataLoader(dataset=test_data, batch_size=1, shuffle=False,
         num_workers=0, pin_memory=False)
 
+    path = os.path.join('vidvrd-baseline-output', 'preprocessed_data')
+    with open(os.path.join(path, 'preprocessed_test_dataset.json'), 'r') as f:
+        dataset1 = json.load(f)
+    dataset2 = h5py.File(os.path.join(path, 'preprocessed_test_dataset.hdf5'), 'r')
+    index = dataset1['index']
+    iou = dataset1['iou']
+    trackid = dataset2['trackid'] 
+    
     logger.info('predicting short-term visual relation...')
-    pbar = tqdm(total=len(dataloader))
+    pbar = tqdm(total=len(data_loader))
     short_term_relations = dict()
+    predictions = []
+    idx = 0
+    cur = 0
+    track_per_seg = len(iou[idx])
+    track_proposal_per_seg = sum(trackid[cur:cur+track_per_seg] < 0)
+    pair_per_seg = track_proposal_per_seg * (track_proposal_per_seg-1)
 
-    for iteration, (index, pairs, feats, iou, trackid) in enumerate(data_loader):
-        prob_p = model(feats)
-        prob_s = feats[:, :35]
-        prob_o = feats[:, 35: 70]
-        predictions = []
-        for i in range(len(pairs)):
-            top_s_ind = np.argsort(prob_s[i])[-param['pair_topk']:]
-            top_p_ind = np.argsort(prob_p[i])[-param['pair_topk']:]
-            top_o_ind = np.argsort(prob_o[i])[-param['pair_topk']:]
-            score = prob_s[i][top_s_ind, None, None]*prob_p[i][None, top_p_ind, None]*prob_o[i][None, None, top_o_ind]
-            top_flat_ind = np.argsort(score, axis = None)[-param['pair_topk']:]
-            top_score = score.ravel()[top_flat_ind]
-            top_s, top_p, top_o = np.unravel_index(top_flat_ind, score.shape)
-            predictions.extend((
-                    top_score[j], 
-                    (top_s_ind[top_s[j]], top_p_ind[top_p[j]], top_o_ind[top_o[j]]), 
-                    tuple(pairs[i])) 
-                    for j in range(top_score.size))
-        predictions = sorted(predictions, key=lambda x: x[0], reverse=True)[:param['seg_topk']]
-        short_term_relations[index] = (predictions, iou, trackid)
+    with torch.no_grad():
+        for iteration, (pairs, feats) in enumerate(data_loader):
+            prob_s = feats[:, :35].numpy()
+            prob_p = model(feats).numpy()
+            prob_o = feats[:, 35: 70].numpy()
 
-        pbar.update(1)
+            sub_idx = np.argsort(-prob_s)[:, :1]
+            obj_idx = np.argsort(-prob_o)[:, :1]
+            topk_pred_ind = np.argsort(-prob_p)[:, :param['pair_topk']]
+            topk_prob_p = np.sort(-prob_p)[:, :param['pair_topk']]
+
+            for j in range(param['pair_topk']):
+                predictions.append(
+                    [
+                        topk_prob_p[:, j],
+                        (sub_idx, topk_pred_ind[:, j], obj_idx),
+                        (np.array(pairs[0]), np.array(pairs[1]))
+                    ]
+                )
+
+            if iteration+1 == pair_per_seg:
+                predictions
+                predictions = sorted(predictions, key=lambda x: x[0], reverse=True)[:param['seg_topk']]
+                short_term_relations[index[idx]] = (predictions, iou[idx], trackid[cur:cur+track_per_seg])
+                predictions = []
+                idx += 1
+                cur = cur+track_per_seg
+                track_per_seg = len(iou[idx])
+                track_proposal_per_seg = sum(trackid[cur:cur+track_per_seg] < 0)
+                pair_per_seg = track_proposal_per_seg * (track_proposal_per_seg-1)
+
+            pbar.update(1)
     pbar.close()
-
     return short_term_relations
+
+    # with torch.no_grad():
+    #     for iteration, (index, pairs, feats, iou, trackid) in enumerate(data_loader):
+    #         # vid, fstart, fend = index
+    #         vid = vid[0]
+    #         fstart = fstart.int()
+    #         fend = fend.int()
+    #         # index = (vid, fstart, fend)
+
+    #         prob_p = model(feats).numpy()
+    #         prob_s = feats[:, :35].numpy()
+    #         prob_o = feats[:, 35: 70].numpy()
+    #         predictions = []
+    #         for i in range(len(pairs)):
+    #             top_s_ind = np.argsort(prob_s[i])[-param['pair_topk']:]
+    #             top_p_ind = np.argsort(prob_p[i])[-param['pair_topk']:]
+    #             top_o_ind = np.argsort(prob_o[i])[-param['pair_topk']:]
+    #             score = prob_s[i][top_s_ind, None, None]*prob_p[i][None, top_p_ind, None]*prob_o[i][None, None, top_o_ind]
+    #             top_flat_ind = np.argsort(score, axis = None)[-param['pair_topk']:]
+    #             top_score = score.ravel()[top_flat_ind]
+    #             top_s, top_p, top_o = np.unravel_index(top_flat_ind, score.shape)
+    #             predictions.extend((
+    #                     top_score[j], 
+    #                     (top_s_ind[top_s[j]], top_p_ind[top_p[j]], top_o_ind[top_o[j]]), 
+    #                     tuple(pairs[i])) 
+    #                     for j in range(top_score.size))
+    #         predictions = sorted(predictions, key=lambda x: x[0], reverse=True)[:param['seg_topk']]
+    #         short_term_relations[index] = (predictions, iou, trackid)
+
+    #         pbar.update(1)
+    #     pbar.close()
+
+    # return short_term_relations

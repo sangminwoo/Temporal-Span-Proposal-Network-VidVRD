@@ -60,8 +60,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # to load the trainning set without low memory mode for faster processing, you need sufficient large RAM
-    dataset = VidOR('../vidor-dataset/annotation', '../vidor-dataset/vidor', ['training', 'validation'], low_memory=True)
+    dataset = VidOR('/home/t2_u1/data/vidor/annotation', '/home/t2_u1/data/vidor/video', ['training', 'validation'], low_memory=True)
     index = dataset.get_index(args.split)
+
+    # print(dataset.soid2so)
+    # print(dataset.so2soid)
+    # print(dataset.pid2pred)
+    # print(dataset.pred2pid)
 
     gts = dict()
     for ind in index:

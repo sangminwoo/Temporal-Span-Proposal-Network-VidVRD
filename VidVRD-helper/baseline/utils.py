@@ -68,6 +68,10 @@ def to_onehot(x, num_classes):
     """ one-hot encodes a tensor """
     return np.eye(num_classes, dtype='float32')[x]
 
+def to_multi_onehot(x, num_classes):
+	one_hot = np.zeros(num_classes)
+	one_hot[x] = 1
+	return one_hot
 
 def load_checkpoint(model, checkpoint):
 	model_state_dict = model.state_dict()

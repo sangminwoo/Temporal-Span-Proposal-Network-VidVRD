@@ -5,48 +5,80 @@ from itertools import product, cycle
 from collections import defaultdict, OrderedDict
 from torch.utils.data import Dataset
 
-from .utils import normalize
+from .utils import normalize, to_multi_onehot
 from baseline import *
 
 class Preprocess:
 	def __init__(self, dataset, param, logger):
+		self.num_predicates = param['predicate_num']
 		self.rng = np.random.RandomState(param['rng_seed'])
 		self.phase = param['phase']
-		self._train_triplet_id = OrderedDict()
 		self.logger = logger
 		self.logger.info('preparing video segments for {}...'.format(self.phase))
+		
 		if self.phase == 'train':
-			# initialize training triplet id
-			self._train_triplet_id.clear()
-			triplets = dataset.get_triplets(split='train')
-			# triplets = {('car', 'faster', 'bus'), ('car', 'taller', 'antelope'), ...} len:2961
-			for i, triplet in enumerate(triplets):
-				sub_name, pred_name, obj_name = triplet
-				sub_id = dataset.get_object_id(sub_name)
-				pred_id = dataset.get_predicate_id(pred_name)
-				obj_id = dataset.get_object_id(obj_name)
-				self._train_triplet_id[(sub_id, pred_id, obj_id)] = i
-			# _train_triplet_id = OrderedDict([((2, 68, 4), 0), ((34, 131, 13), 1), ...]) len:2961
-
 			self.short_rel_insts = defaultdict(list)
 			video_indices = dataset.get_index(split='train')
 			for vid in video_indices:
+				rel_dict = defaultdict(list)
 				for rel_inst in dataset.get_relation_insts(vid, no_traj=True):
+					'''
+					rel_inst = {'triplet': ('zebra', 'walk_front', 'zebra'),
+								'subject_tid': 0,
+								'object_tid': 1, 
+								'duration': (150, 180)}
+					rel_inst = {'triplet': ('person', 'sit_next_to', 'dog'),
+								'subject_tid': 9,
+								'object_tid': 0,
+								'duration': (0, 30)}
+					'''
+					sub_name, pred_name, obj_name = rel_inst['triplet']
 					segs = segment_video(*rel_inst['duration'])
+					'''
+					segment_video(0, 30)
+					-> segs = [(0, 30)]
+
+					segment_video(0, 45)
+					-> segs = [(0, 30), (15, 45)]
+					'''
 					for fstart, fend in segs:
-						# if multiple objects detected and the relation features extracted
-						# cache the corresponding groudtruth labels
-						if self._extract_feature(vid, fstart, fend, dry_run=True):
-							sub_name, pred_name, obj_name = rel_inst['triplet']
-							self.short_rel_insts[(vid, fstart, fend)].append((
-								rel_inst['subject_tid'], # 0th
-								rel_inst['object_tid'], # 1st
-								dataset.get_object_id(sub_name), # 2: car
-								dataset.get_predicate_id(pred_name), # 68: faster
-								dataset.get_object_id(obj_name) # 4: bus
-							))
+						rel_dict[fstart, # 0
+								 fend, # 30
+								 rel_inst['subject_tid'], # 1st in current segment
+								 rel_inst['object_tid'], # 3rd in current segment
+								 dataset.get_object_id(sub_name), # 2: car
+								 dataset.get_object_id(obj_name) # 4: bus
+								].append(dataset.get_predicate_id(pred_name)) # 68: faster
+				'''
+				defaultdict(list,
+				            {(0, 30, 0, 1, 19, 10): [92, 86, 70, 4, 131, 118],
+				             (0, 30, 1, 0, 10, 19): [51, 53, 46, 131],
+				             (0, 30, 0, 2, 19, 27): [92, 88],
+				             (15, 45, 0, 2, 19, 27): [92, 88], # 15-45
+				             (0, 30, 2, 0, 27, 19): [2, 47, 46],
+				             (0, 30, 0, 3, 19, 27): [85, 118],
+				             (0, 30, 3, 0, 27, 19): [3, 46],
+				             (0, 30, 1, 2, 10, 27): [55],
+				             (15, 45, 1, 2, 10, 27): [55]}} # 15-45
+				            )
+				'''
+				for (fstart, fend, sub_tid, obj_tid, sub, obj), pred in rel_dict.items():
+					if self._extract_feature(vid, fstart, fend, dry_run=True):
+						self.short_rel_insts[(vid, fstart, fend)].append((sub_tid, obj_tid, sub, pred, obj))
+				'''
+				self.short_rel_insts[(vid, fstart=0, fend=30)] = 
+					[(0, 1, 19, [92, 86, 70, 4, 131, 118], 10),
+					 (1, 0, 10, [51, 53, 46, 131], 19),
+					 (0, 2, 19, [92, 88], 27),
+					 (2, 0, 27, [2, 47, 46], 19),
+					 (0, 3, 19, [85, 118], 27),
+					 (3, 0, 27, [3, 46], 19),
+					 (1, 2, 10, [55], 27)]
+				self.short_rel_insts[(vid, fstart=15, fend=45)] = 
+					[(0, 2, 19, [92, 88], 27),
+					 (1, 2, 10, [55], 27)]
+				'''
 			self.index = list(self.short_rel_insts.keys())
-			self.ind_iter = cycle(range(len(self.index)))
 		elif self.phase == 'test':
 			self.index = []
 			video_indices = dataset.get_index(split='test')
@@ -58,30 +90,27 @@ class Preprocess:
 					# if multiple objects detected and the relation features extracted
 					if self._extract_feature(vid, fstart, fend, dry_run=True):
 						self.index.append((vid, fstart, fend))
-			self.ind_iter = iter(range(len(self.index)))
 		else:
 			raise ValueError('Unknown phase: {}'.format(self.phase))
 
 	def preprocess(self):
-		self.logger.info(f'Total {len(self.index)} segments')
+		self.logger.info(f'Total {len(self.index)} video segments')
 
 		if self.phase == 'train':
 			feats = []
-			triplet_idx = []
 			pred_id = []
 			for i in range(len(self.index)):
 				self.logger.info(f'processing {i+1}th segment of train data')
 				vid, fstart, fend = self.index[i]
-				_feats, _triplet_idx, _pred_id = self._data_sampling(vid, fstart, fend)
+				_feats, _pred_id = self._data_sampling(vid, fstart, fend)
+
 				_feats = self._feature_preprocess(_feats)
 				feats.append(_feats.astype(np.float32))
-				triplet_idx.append(_triplet_idx.astype(np.float32))
 				pred_id.append(_pred_id.astype(np.float32))
 
 			feats = np.concatenate(feats)
-			triplet_idx = np.concatenate(triplet_idx)
 			pred_id = np.concatenate(pred_id)
-			return feats, triplet_idx, pred_id
+			return feats, pred_id
 		else:
 			index = []
 			pairs = []
@@ -96,6 +125,7 @@ class Preprocess:
 						if _trackid[traj1] < 0 and _trackid[traj2] < 0]
 				_pairs = _pairs[test_inds]
 				_feats = self._feature_preprocess(_feats[test_inds])
+				
 				index.append(_index)
 				pairs.append(_pairs)
 				feats.append(_feats.astype(np.float32))
@@ -111,24 +141,66 @@ class Preprocess:
 
 	def _data_sampling(self, vid, fstart, fend, iou_thres=0.5):
 		pairs, feats, iou, trackid = self._extract_feature(vid, fstart, fend)
+		'''
+		pairs = [[ 0  1]
+				 [ 0  2]
+				 [ 0  3]
+				 ...
+				 [69 66]
+				 [69 67]
+				 [69 68]] (4830, 2)
+
+		feats = [[6.02378805e-07 3.02198659e-05 9.47627029e-07 ... 0.00000000e+00
+				  0.00000000e+00 0.00000000e+00]
+				 [6.02378805e-07 3.02198659e-05 9.47627029e-07 ... 0.00000000e+00
+				  0.00000000e+00 0.00000000e+00]
+				 [6.02378805e-07 3.02198659e-05 9.47627029e-07 ... 0.00000000e+00
+				  0.00000000e+00 0.00000000e+00]
+				 ...
+				 [3.13814926e-05 2.34911786e-05 2.29112455e-03 ... 0.00000000e+00
+				  0.00000000e+00 0.00000000e+00]
+				 [3.13814926e-05 2.34911786e-05 2.29112455e-03 ... 0.00000000e+00
+				  0.00000000e+00 0.00000000e+00]
+				 [3.13814926e-05 2.34911786e-05 2.29112455e-03 ... 0.00000000e+00
+				  0.00000000e+00 0.00000000e+00]] (4830, 11070)
+
+		iou =  [[0.99999976 0.10673315 0.         ... 0.         0.6488573  0.09914057]
+				[0.10673315 0.9999998  0.         ... 0.         0.18019408 0.01014457]
+				[0.         0.         1.0000001  ... 0.         0.         0.        ]
+				...
+				[0.         0.         0.         ... 0.9999999  0.         0.        ]
+				[0.6488573  0.18019408 0.         ... 0.         1.         0.06941444]
+				[0.09914057 0.01014457 0.         ... 0.         0.06941444 1.        ]] (70, 70)
+
+		trackid =  [-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+					-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+					-1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1  0  1] (70,)
+		'''
 		feats = feats.astype(np.float32)
 		pair_to_find = dict([((traj1, traj2), find)
 				for find, (traj1, traj2) in enumerate(pairs)])
 		tid_to_ind = dict([(tid, ind) for ind, tid in enumerate(trackid) if tid >= 0])
 
-		pos = np.empty((0, 3), dtype = np.int32)
-		for tid1, tid2, s, p, o in self.short_rel_insts[(vid, fstart, fend)]:
-			if tid1 in tid_to_ind and tid2 in tid_to_ind:
-				iou1 = iou[:, tid_to_ind[tid1]]
-				iou2 = iou[:, tid_to_ind[tid2]]
+		# pos = np.empty((0, 2), dtype = np.int32)
+		feat_idx = []
+		pred_id = []
+		for sub_tid, obj_tid, sub, pred, obj in self.short_rel_insts[(vid, fstart, fend)]:
+			if sub_tid in tid_to_ind and obj_tid in tid_to_ind:
+				iou1 = iou[:, tid_to_ind[sub_tid]]
+				iou2 = iou[:, tid_to_ind[obj_tid]]
 				pos_inds1 = np.where(iou1 >= iou_thres)[0]
 				pos_inds2 = np.where(iou2 >= iou_thres)[0]
-				tmp = [(pair_to_find[(traj1, traj2)], self._train_triplet_id[(s, p, o)], p)
-						for traj1, traj2 in product(pos_inds1, pos_inds2) if traj1 != traj2]
-				if len(tmp) > 0:
-					pos = np.concatenate((pos, tmp))
 
-		return feats[pos[:, 0]], pos[:, 1], pos[:, 2]
+				for traj1, traj2 in product(pos_inds1, pos_inds2):
+					if traj1 != traj2:
+						feat_idx.append(pair_to_find[(traj1, traj2)])
+						pred_id.append(to_multi_onehot(pred, self.num_predicates))
+
+		if len(pred_id) > 1:
+			pred_id = np.stack(pred_id)
+		else:
+			pred_id = np.array([])
+		return feats[feat_idx], pred_id  # _feats, _pred_id
 
 	def _extract_feature(self, vid, fstart, fend, dry_run=False, verbose=False):
 		vsig = get_segment_signature(vid, fstart, fend)
@@ -187,8 +259,8 @@ class Preprocess:
 def preprocess_data(dataset, param, logger):
 	processor = Preprocess(dataset, param, logger)
 	if param['phase'] == 'train':
-		feats, triplet_idx, pred_id = processor.preprocess()
-		return feats, triplet_idx, pred_id
+		feats, pred_id = processor.preprocess()
+		return feats, pred_id
 	elif param['phase'] == 'test':
 		index, pairs, feats, iou, trackid = processor.preprocess()
 		return index, pairs, feats, iou, trackid

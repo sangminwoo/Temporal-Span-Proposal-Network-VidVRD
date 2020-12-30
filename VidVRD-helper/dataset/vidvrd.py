@@ -43,6 +43,11 @@ class VidVRD(Dataset):
 
 
 if __name__ == '__main__':
-    dataset = VidVRD('../../vidvrd-dataset', '../../vidvrd-dataset/videos', ['train', 'test'])
+    dataset = VidVRD('/home/t2_u1/data/vidvrd', '/home/t2_u1/data/vidvrd/videos', ['train', 'test'])
     test_inds = dataset.get_index('test')
     print(dataset.get_relation_insts(test_inds[111]))
+
+    # print(dataset.soid2so)
+    # print(dataset.so2soid)
+    # print(dataset.pid2pred)
+    # print(dataset.pred2pid)
