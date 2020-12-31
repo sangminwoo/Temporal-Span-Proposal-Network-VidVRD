@@ -16,10 +16,9 @@ class VRDDataset(Dataset):
 		if self.phase == 'train':
 			self.dataset = h5py.File(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.hdf5'), 'r')
 			self.feats = self.dataset['feats']
-			self.triplet_idx = self.dataset['triplet_idx']
 			self.pred_id = self.dataset['pred_id']
 
-			assert len(self.feats) == len(self.triplet_idx) == len(self.pred_id)
+			assert len(self.feats) == len(self.pred_id)
 			self.logger.info('total {} preprocessed relation instance proposals'.format(len(self.feats)))
 		elif self.phase == 'test':
 			self.dataset = h5py.File(os.path.join(path, 'preprocessed_'+self.phase+'_dataset.hdf5'), 'r')
@@ -42,7 +41,7 @@ class VRDDataset(Dataset):
 
 	def __getitem__(self, idx):
 		if self.phase == 'train':
-			return self.feats[idx], self.triplet_idx[idx], self.pred_id[idx]
+			return self.feats[idx], self.pred_id[idx]
 		else:
 			return self.pairs[idx], self.feats[idx]
 			# return self.index[idx], self.pairs[idx], self.feats[idx], self.iou[idx], self.trackid[idx]

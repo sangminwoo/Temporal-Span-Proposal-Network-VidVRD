@@ -181,7 +181,6 @@ class Preprocess:
 				for find, (traj1, traj2) in enumerate(pairs)])
 		tid_to_ind = dict([(tid, ind) for ind, tid in enumerate(trackid) if tid >= 0])
 
-		# pos = np.empty((0, 2), dtype = np.int32)
 		feat_idx = []
 		pred_id = []
 		for sub_tid, obj_tid, sub, pred, obj in self.short_rel_insts[(vid, fstart, fend)]:
@@ -196,10 +195,10 @@ class Preprocess:
 						feat_idx.append(pair_to_find[(traj1, traj2)])
 						pred_id.append(to_multi_onehot(pred, self.num_predicates))
 
-		if len(pred_id) > 1:
+		if len(pred_id) > 0:
 			pred_id = np.stack(pred_id)
 		else:
-			pred_id = np.array([])
+			pred_id = np.array([]).reshape(0, self.num_predicates)
 		return feats[feat_idx], pred_id  # _feats, _pred_id
 
 	def _extract_feature(self, vid, fstart, fend, dry_run=False, verbose=False):
