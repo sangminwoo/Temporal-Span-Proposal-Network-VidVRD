@@ -1,4 +1,7 @@
 import os
+import json
+import argparse
+from pprint import pprint
 from collections import defaultdict
 
 class VidvrdVidorDataset:
@@ -7,10 +10,10 @@ class VidvrdVidorDataset:
     It helps maintaining the mapping between category id and category name,
     and parsing the annotations to get instances of object, action and visual relation.
     """
-	def __init__(self, data_dir, dataset='vidvrd', split='train'):
+	def __init__(self, data_dir, dataset, split, anno):
 		# vidvrd anno_path: '/home/t2_u1/data/vidvrd/train/ILSVRC2015_train_00005003.json'
 		# vidor anno_path: '/home/t2_u1/data/vidor/annotation/training/0000/2401075277.json'
-		anno_path = os.path.join(data_dir, split)
+		anno_path = os.path.join(data_dir, dataset, split, anno)
 		if dataset == 'vidvrd':
 			# VidVRD (obj:35, rel:132)
 			self.idx_to_obj = {0: 'airplane', 1: 'antelope', 2: 'ball', 3: 'bear', 4: 'bicycle', 5: 'bird', 6: 'bus', 7: 'car', 8: 'cattle', 9: 'dog', 10: 'domestic_cat', 11: 'elephant', 12: 'fox', 13: 'frisbee', 14: 'giant_panda', 15: 'hamster', 16: 'horse', 17: 'lion', 18: 'lizard', 19: 'monkey', 20: 'motorcycle', 21: 'person', 22: 'rabbit', 23: 'red_panda', 24: 'sheep', 25: 'skateboard', 26: 'snake', 27: 'sofa', 28: 'squirrel', 29: 'tiger', 30: 'train', 31: 'turtle', 32: 'watercraft', 33: 'whale', 34: 'zebra'}
@@ -26,8 +29,8 @@ class VidvrdVidorDataset:
 		else:
 			raise ValueError('Unknown dataset: {}'.format(dataset))
 
-		self.vid, self.width, self.height, self.traj, self.obj, self.rel, self.traj_len =
-			self._load_anno(anno_path)
+		self.vid, self.width, self.height, self.traj, self.obj, self.rel, self.traj_len = self._load_anno(anno_path)
+		self._print_anno()
 
 	def _load_anno(self, anno_path):
 		with open(anno_path, 'r') as f:
@@ -44,11 +47,11 @@ class VidvrdVidorDataset:
 		#####################################################################################
 		traj = defaultdict(list)
 		for traj_per_frame in traj_per_video:
-		    for traj_per_inst in traj_per_frame:
-		        traj[traj_per_inst['tid']].append([traj_per_inst['bbox']['xmin'],
-		                                           traj_per_inst['bbox']['ymin'],
-		                                           traj_per_inst['bbox']['xmax'],
-		                                           traj_per_inst['bbox']['ymax']])
+			for traj_per_inst in traj_per_frame:
+				traj[traj_per_inst['tid']].append([traj_per_inst['bbox']['xmin'],
+												   traj_per_inst['bbox']['ymin'],
+												   traj_per_inst['bbox']['xmax'],
+												   traj_per_inst['bbox']['ymax']])
 		''' (example)
 		traj = defaultdict(list,
             {0: [[14, 8, 912, 574],
@@ -59,17 +62,17 @@ class VidvrdVidorDataset:
 	             [1, 124, 855, 570],
 	             [1, 117, 849, 568]],
 	        1: [[758, 121, 926, 409],
-                [758, 121, 926, 409],
-                [758, 121, 926, 409],
-                ...
-                [703, 252, 957, 477],
-                [695, 249, 951, 481],
-                [686, 247, 944, 484]]})
+				[758, 121, 926, 409],
+				[758, 121, 926, 409],
+				...
+				[703, 252, 957, 477],
+				[695, 249, 951, 481],
+				[686, 247, 944, 484]]})
 		'''
 		#####################################################################################
 		obj = {} # {0: 'dog', 1: 'frisbee'}
 		for obj_category in obj_categories:
-		    obj_idx = self.obj_to_idx[obj_category['category']]
+			obj_idx = self.obj_to_idx[obj_category['category']]
 			obj[obj_category['tid']] = obj_idx
 		''' (example)
 		obj = {0: 9, 1: 13}
@@ -77,7 +80,7 @@ class VidvrdVidorDataset:
 		#####################################################################################
 		rel = defaultdict(list)
 		for rel_inst in rel_per_seg:
-		    rel_idx = rel_to_idx[rel_inst['predicate']]
+		    rel_idx = self.rel_to_idx[rel_inst['predicate']]
 		    rel[rel_inst['begin_fid'], rel_inst['end_fid']].append([rel_inst['subject_tid'],
 		                                                            rel_idx,
 		                                                            rel_inst['object_tid']])
@@ -101,7 +104,7 @@ class VidvrdVidorDataset:
 		    rel_per_obj_pair = defaultdict(list)
 		    for s, r, o in value:
 		        rel_per_obj_pair[s, o].append(r)
-		    rel[key] = rel_per_obj_pair
+		    rel[key] = dict(rel_per_obj_pair)
 		''' (example) 
 		rel = defaultdict(list,
             {(0, 30): defaultdict(list, {(0, 1): [37], (1, 0): [85, 72]}),
@@ -121,4 +124,40 @@ class VidvrdVidorDataset:
 		'''
 		#####################################################################################
 
-		return vid, width, height, traj, obj, rel, traj_len
+		return vid, width, height, dict(traj), obj, dict(rel), traj_len
+
+	def _print_anno(self):
+		print(f'==============================='*2)
+		print(f'- video id: {self.vid}')
+		print(f'- video size (width,height): {self.width, self.height}')
+		print(f'- trajectory length: {self.traj_len}')
+		obj = {tid:self.idx_to_obj[obj_idx] for tid, obj_idx in self.obj.items()}
+		print(f'- trajectory id to object idx: {obj}')
+		print(f'- object trajectories (xmin, ymin, xmax, ymax)')
+		pprint(self.traj)
+		rel = {}
+		for duration, rel_per_seg in self.rel.items():
+			new_rel_per_seg = {}
+			for (sub_id, obj_id), rel_idx in rel_per_seg.items():
+				rels = []
+				for r in rel_idx:
+					rels.append(self.idx_to_rel[r])
+				new_rel_per_seg[(obj[sub_id], obj[obj_id])] = rels
+			rel[duration] = new_rel_per_seg
+		print(f'- relation instances (start, end):(sub, obj):[relations]')
+		pprint(rel)
+		print(f'==============================='*2)
+
+if __name__=='__main__':
+	parser = argparse.ArgumentParser(description='VidVRD/VidOR annotation')
+	parser.add_argument('--data_dir', type=str, default='/home/t2_u1/data/', help='dataset directory')
+	parser.add_argument('--dataset', type=str, default='vidvrd', help='the dataset name for training (vidvrd OR vidor/annotation)')
+	parser.add_argument('--split', type=str, default='train', help='vidvrd: train/test OR vidor: training/validation')
+	parser.add_argument('--anno', type=str, help='ex) ILSVRC2015_train_00005003.json')
+
+	args = parser.parse_args()
+
+	assert (args.dataset=='vidvrd' and args.split in ['train', 'test']) or \
+	 args.dataset=='vidor/annotation' and args.split in ['training', 'validation']
+
+	dataset = VidvrdVidorDataset(data_dir=args.data_dir, dataset=args.dataset, split=args.split, anno=args.anno)
