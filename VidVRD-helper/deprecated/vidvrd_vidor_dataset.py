@@ -30,6 +30,7 @@ class VidvrdVidorDataset:
 			raise ValueError('Unknown dataset: {}'.format(dataset))
 
 		self.vid, self.width, self.height, self.traj, self.obj, self.rel, self.traj_len = self._load_anno(anno_path)
+		self._merge_rel()
 		self._print_anno()
 
 	def _load_anno(self, anno_path):
@@ -126,6 +127,31 @@ class VidvrdVidorDataset:
 
 		return vid, width, height, dict(traj), obj, dict(rel), traj_len
 
+	def _merge_rel(self):
+		rel_duration_dict = defaultdict(list)
+		for duration, rel_per_seg in self.rel.items():
+			for (sub_id, obj_id), rel_idx_list in rel_per_seg.items():
+				for rel_idx in rel_idx_list:
+					rel_duration_dict[(sub_id, rel_idx, obj_id)].append(duration)
+
+		new_rel_duration_dict = defaultdict(list)
+		for rel_triplet, duration_list in rel_duration_dict.items():
+			prev_start = 0 
+			prev_end = 0
+			for start, end in duration_list:
+				if prev_start==0 and prev_end==0:
+					prev_start = start
+					prev_end = end
+				elif prev_start <= start <= prev_end:
+					prev_end = max(prev_end, end)
+				else:
+					new_rel_duration_dict[rel_triplet].append((prev_start, prev_end))
+					prev_start = start
+					prev_end = end
+			new_rel_duration_dict[rel_triplet].append((prev_start, prev_end))
+
+		self.rel = dict(new_rel_duration_dict)
+
 	def _print_anno(self):
 		print(f'==============================='*2)
 		print(f'- video id: {self.vid}')
@@ -135,16 +161,21 @@ class VidvrdVidorDataset:
 		print(f'- trajectory id to object idx: {obj}')
 		print(f'- object trajectories (xmin, ymin, xmax, ymax)')
 		pprint(self.traj)
+		# rel = {}
+		# for duration, rel_per_seg in self.rel.items():
+		# 	new_rel_per_seg = {}
+		# 	for (sub_id, obj_id), rel_idx_list in rel_per_seg.items():
+		# 		rels = []
+		# 		for rel_idx in rel_idx_list:
+		# 			rels.append(self.idx_to_rel[rel_idx])
+		# 		new_rel_per_seg[(obj[sub_id], obj[obj_id])] = rels
+		# 	rel[duration] = new_rel_per_seg
+		# print(f'- relation instances (start, end):(sub, obj):[relations]')
+		# pprint(rel)
 		rel = {}
-		for duration, rel_per_seg in self.rel.items():
-			new_rel_per_seg = {}
-			for (sub_id, obj_id), rel_idx in rel_per_seg.items():
-				rels = []
-				for r in rel_idx:
-					rels.append(self.idx_to_rel[r])
-				new_rel_per_seg[(obj[sub_id], obj[obj_id])] = rels
-			rel[duration] = new_rel_per_seg
-		print(f'- relation instances (start, end):(sub, obj):[relations]')
+		for (sub_id, rel_idx, obj_id), duration_list in self.rel.items():
+			rel[obj[sub_id], self.idx_to_rel[rel_idx], obj[obj_id]] = duration_list
+		print(f'- relation instances (sub, rel, obj):[durations]')
 		pprint(rel)
 		print(f'==============================='*2)
 
