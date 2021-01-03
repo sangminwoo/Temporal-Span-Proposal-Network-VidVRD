@@ -5,14 +5,10 @@ import time
 from datetime import datetime, timedelta
 
 import numpy as np
-import h5py
 from tqdm import tqdm
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.backends.cudnn as cudnn
-import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
@@ -24,7 +20,7 @@ from .comm import synchronize, is_main_process
 from .utils import AverageMeter, calculate_eta 
 from .logger import setup_logger, get_timestamp
 from .serialize import load_checkpoint
-# from .rel_proposal import rel_proposal_loss
+# from .duration_proposal import duration_proposal_loss
 from baseline import *
 
 
