@@ -21,38 +21,22 @@ from torch.utils.data.distributed import DistributedSampler
 from .vrdataset import VRDataset
 # from .feature import FeatureExtractor
 from .comm import synchronize, is_main_process
-from .utils import AverageMeter, setup_logger, get_timestamp, calculate_eta, load_checkpoint
+from .utils import AverageMeter, calculate_eta 
+from .logger import setup_logger, get_timestamp
+from .serialize import load_checkpoint
 # from .rel_proposal import rel_proposal_loss
 from baseline import *
 
-class Model(nn.Module):
+
+class RelationPredictor(nn.Module):
     def __init__(self, param):
-        super(Model, self).__init__()
-        self.linear = nn.Linear(param['feature_dim'], param['predicate_num'])
+        super(RelationPredictor, self).__init__()
+        self.classifier = nn.Linear(param['feature_dim'], param['predicate_num'])
 
     def forward(self, feats):
-        output = self.linear(feats) # 64x11070 -> 64x132
-        output = torch.sigmoid(output)
-        return output
-
-class LongTermRelationPredictor(nn.Module):
-    def __init__(self, param):
-        super(LongTermRelationPredictor, self).__init__()
-        self.conv = nn.Conv1d(in_channels=param['predicate_num'],
-                              out_channels=param['predicate_num'],
-                              kernel_size=2,
-                              stride=1,
-                              padding=0,
-                              dilation=1,
-                              groups=1,
-                              bias=True,
-                              padding_mode='zeros')
-
-    def forward(self, feats):
-        out = self.conv(feats) # 64x132 -> 32x132
-        
-        output = torch.sigmoid(output)
-        return output
+        relation = self.classifier(feats) # 64x11070 -> 64x132
+        relation = torch.sigmoid(relation)
+        return relation
 
 def train(gpu, args, dataset, param):
     rank = args.local_rank * args.ngpus_per_node + gpu
@@ -81,7 +65,7 @@ def train(gpu, args, dataset, param):
     # logger.info('Feature dimension is {}'.format(param['feature_dim']))
     # logger.info('Number of observed training triplets is {}'.format(param['triplet_num']))
 
-    model = Model(param)
+    model = RelationPredictor(param)
     torch.cuda.set_device(gpu)
     model = model.cuda(gpu)
     model = DistributedDataParallel(model, device_ids=[gpu])
@@ -89,7 +73,7 @@ def train(gpu, args, dataset, param):
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'], weight_decay=param['weight_decay'])
     # optimizer = torch.optim.SGD(params=model.parameters(), momentum=param['momentum'], lr=param['learning_rate'], weight_decay=param['weight_decay'])
-    criterion = nn.BCELoss()
+    bce_loss = nn.BCELoss()
 
     loss_meter = AverageMeter()
     time_meter = AverageMeter()
@@ -104,7 +88,8 @@ def train(gpu, args, dataset, param):
 
                 optimizer.zero_grad()
                 output = model(feats) # 64x132
-                loss = criterion(output, target)
+
+                loss = bce_loss(output, target)
                 loss.backward()
                 optimizer.step()
 
@@ -171,7 +156,7 @@ def predict(dataset, param, logger):
     param['phase'] = 'test'
 
     # load model
-    model = Model(param)
+    model = RelationPredictor(param)
     checkpoint = torch.load(os.path.join(get_model_path(), param['model_dump_file']))
     load_checkpoint(model, checkpoint['model'])
     logger.info(f"=> checkpoint succesfully loaded")

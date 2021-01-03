@@ -11,8 +11,8 @@ import h5py
 
 from dataset import VidVRD
 from baseline import segment_video, get_model_path
-from baseline import trajectory, feature, model, association, utils, vrdataset
-from baseline.utils import setup_logger, get_timestamp
+from baseline import trajectory, feature, model, association, vrdataset
+from baseline.logger import setup_logger, get_timestamp
 
 def load_object_trajectory_proposal(data_dir):
     """
@@ -84,6 +84,7 @@ def preprocessing(args, data_dir):
         f['pred_id'] = pred_id
 
     logger.info('successfully saved preprocessed data...')
+
 
 def train(args, data_dir):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])

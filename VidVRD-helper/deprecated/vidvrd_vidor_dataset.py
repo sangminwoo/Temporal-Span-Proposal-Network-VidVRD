@@ -128,11 +128,17 @@ class VidvrdVidorDataset:
 		return vid, width, height, dict(traj), obj, dict(rel), traj_len
 
 	def _merge_rel(self):
+		obj = {tid:self.idx_to_obj[obj_idx] for tid, obj_idx in self.obj.items()}
+
 		rel_duration_dict = defaultdict(list)
 		for duration, rel_per_seg in self.rel.items():
 			for (sub_id, obj_id), rel_idx_list in rel_per_seg.items():
 				for rel_idx in rel_idx_list:
-					rel_duration_dict[(sub_id, rel_idx, obj_id)].append(duration)
+					rel_duration_dict[(
+						self.obj[sub_id],
+						rel_idx,
+						self.obj[obj_id]
+					)].append(duration)
 
 		new_rel_duration_dict = defaultdict(list)
 		for rel_triplet, duration_list in rel_duration_dict.items():
@@ -145,10 +151,10 @@ class VidvrdVidorDataset:
 				elif prev_start <= start <= prev_end:
 					prev_end = max(prev_end, end)
 				else:
-					new_rel_duration_dict[rel_triplet].append((prev_start, prev_end))
+					new_rel_duration_dict[(prev_start, prev_end)].append(rel_triplet)
 					prev_start = start
 					prev_end = end
-			new_rel_duration_dict[rel_triplet].append((prev_start, prev_end))
+			new_rel_duration_dict[(prev_start, prev_end)].append(rel_triplet)
 
 		self.rel = dict(new_rel_duration_dict)
 
@@ -172,11 +178,16 @@ class VidvrdVidorDataset:
 		# 	rel[duration] = new_rel_per_seg
 		# print(f'- relation instances (start, end):(sub, obj):[relations]')
 		# pprint(rel)
-		rel = {}
-		for (sub_id, rel_idx, obj_id), duration_list in self.rel.items():
-			rel[obj[sub_id], self.idx_to_rel[rel_idx], obj[obj_id]] = duration_list
+		rel = defaultdict(list)
+		for duration, triplet_list in self.rel.items():
+			for (sub_idx, rel_idx, obj_idx) in triplet_list:
+				rel[duration].append((
+					self.idx_to_obj[sub_idx],
+					self.idx_to_rel[rel_idx],
+					self.idx_to_obj[obj_idx]
+				))
 		print(f'- relation instances (sub, rel, obj):[durations]')
-		pprint(rel)
+		pprint(dict(rel))
 		print(f'==============================='*2)
 
 if __name__=='__main__':
