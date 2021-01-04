@@ -9,12 +9,12 @@ import torch.multiprocessing as mp
 import numpy as np
 import h5py
 
-from dataset import VidVRD
-from baseline import segment_video, get_model_path
-from baseline import trajectory, feature, association, vrdataset
-from baseline.train import train
-from baseline.predict import predict
-from baseline.logger import setup_logger, get_timestamp
+from lib.dataset import VidVRD, vrdataset
+from lib.modeling import *
+from lib.modeling import trajectory, feature, association
+from lib.modeling.train import train
+from lib.modeling.predict import predict
+from lib.utils.logger import setup_logger, get_timestamp
 
 
 def load_object_trajectory_proposal(data_dir):
@@ -89,7 +89,7 @@ def preprocessing(args, data_dir):
     logger.info('successfully saved preprocessed data...')
 
 
-def train(args, data_dir):
+def training(args, data_dir):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     with open('default.json', 'r') as fin:
@@ -165,7 +165,7 @@ if __name__ == '__main__':
         if args.preprocess:
             preprocessing(args, os.path.join(args.data_dir, args.dataset))
         if args.train:
-            train(args, os.path.join(args.data_dir, args.dataset))
+            training(args, os.path.join(args.data_dir, args.dataset))
         if args.detect:
             detect(os.path.join(args.data_dir, args.dataset))
     else:
