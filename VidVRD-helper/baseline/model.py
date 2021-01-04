@@ -34,6 +34,7 @@ class RelationPredictor(nn.Module):
         relation = torch.sigmoid(relation)
         return relation
 
+
 def train(gpu, args, dataset, param):
     rank = args.local_rank * args.ngpus_per_node + gpu
     logger = setup_logger(name='train', save_dir='logs', distributed_rank=rank, filename=f'{get_timestamp()}_train.txt')
@@ -69,7 +70,7 @@ def train(gpu, args, dataset, param):
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'], weight_decay=param['weight_decay'])
     # optimizer = torch.optim.SGD(params=model.parameters(), momentum=param['momentum'], lr=param['learning_rate'], weight_decay=param['weight_decay'])
-    bce_loss = nn.BCELoss()
+    criterion = nn.BCELoss()
 
     loss_meter = AverageMeter()
     time_meter = AverageMeter()
@@ -85,7 +86,7 @@ def train(gpu, args, dataset, param):
                 optimizer.zero_grad()
                 output = model(feats) # 64x132
 
-                loss = bce_loss(output, target)
+                loss = criterion(output, target)
                 loss.backward()
                 optimizer.step()
 
@@ -171,6 +172,11 @@ def predict(dataset, param, logger):
     short_term_relations = dict()
     with torch.no_grad():
         for index, pairs_, feats_, iou_, trackid_ in data_loader:
+            vid, fstart, fend = index
+            vid = vid[0]
+            fstart = fstart.int()
+            fend = fend.int()
+            index = (vid, fstart, fend)
             for pairs, feats, iou, trackid in zip(pairs_, feats_, iou_, trackid_):
                 '''
                 P: num of all possible relations per segment
@@ -207,12 +213,6 @@ def predict(dataset, param, logger):
                 trackid ( shape: (P+GT) / proposal: -1, GT: 0,1,2)
                 tensor([[-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2]])
                 '''
-                vid, fstart, fend = index
-                vid = vid[0]
-                fstart = fstart.int()
-                fend = fend.int()
-                index = (vid, fstart, fend)
-
                 prob_p = model(feats).numpy()
                 prob_s = feats[:, :35].numpy()
                 prob_o = feats[:, 35: 70].numpy()
