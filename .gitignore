@@ -11,6 +11,7 @@ videovrd_tracklets.json
 *.pt
 *.pth
 logs/
+vidvrd-baseline-output/
 
 # C extensions
 *.so

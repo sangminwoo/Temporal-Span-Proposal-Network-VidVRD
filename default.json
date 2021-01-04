@@ -1,0 +1,19 @@
+{
+    "model_name": "baseline",
+    "rng_seed": 0,
+    "batch_size": 1024,
+    "learning_rate": 1e-2,
+    "weight_decay": 1e-5,
+    "max_epoch": 100,
+    "display_freq": 1,
+    "save_freq": 20,
+    "epsilon": 1e-08,
+    "topk_per_pair": 20,
+    "topk_per_seg": 200,
+    "phase": "train",
+    "object_num": 35,
+    "predicate_num": 132,
+    "feature_dim": 11070,
+    "triplet_num": 2961,
+    "model_dump_file": "baseline_weights_epoch_100.pt"
+}
