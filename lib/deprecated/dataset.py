@@ -8,12 +8,11 @@ from lib.utils.miscellaneous import normalize
 from lib.modeling import *
 
 class VRDDataset(Dataset):
-	def __init__(self, dataset, param, logger):
-		self.rng = np.random.RandomState(param['rng_seed'])
-		self.batch_size = param['batch_size']
-		self.max_sampling_in_batch = param['max_sampling_in_batch']
+	def __init__(self, cfg, dataset, logger):
+		self.rng = np.random.RandomState(cfg.ETC.RANDOM_SEED)
+		self.batch_size = cfg.MODEL.TRAIN_BATCH_SIZE if self.training else cfg.MODEL.TEST_BATCH_SIZE
 		assert self.max_sampling_in_batch <= self.batch_size
-		self.phase = param['phase']
+		self.phase = cfg.MODEL.PHASE
 		self._train_triplet_id = OrderedDict()
 		self.logger = logger
 		self.logger.info('preparing video segments for {}...'.format(self.phase))

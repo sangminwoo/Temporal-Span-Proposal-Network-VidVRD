@@ -1,6 +1,4 @@
-# Video Visual Relationship Detection & Video Object Relation
-
-## VidVRD
+# End-to-End Video Relation Detection with Relation Proposal Network
 
 ### Dataset
 VidVRD dataset can be found in [here](https://xdshang.github.io/docs/imagenet-vidvrd.html).
@@ -55,7 +53,7 @@ The json file contains a dictionary sturctured like:
 }
 ```
 
-## VidOR
+## Video Object Relation (VidOR)
 
 ### Dataset
 VidOR dataset can be found in [here](https://xdshang.github.io/docs/vidor.html).

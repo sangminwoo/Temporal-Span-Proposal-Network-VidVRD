@@ -10,10 +10,10 @@ from lib.utils.miscellaneous import normalize, to_multi_onehot
 from lib.modeling import *
 
 class VRDataset(Dataset):
-	def __init__(self, dataset, param, logger):
-		self.num_predicates = param['predicate_num']
-		self.rng = np.random.RandomState(param['rng_seed'])
-		self.phase = param['phase']
+	def __init__(self, cfg, dataset, logger):
+		self.num_predicates = cfg.PREDICT.PREDICATE_NUM
+		self.rng = np.random.RandomState(cfg.ETC.RANDOM_SEED)
+		self.phase = cfg.MODEL.PHASE
 		self.logger = logger
 		self.logger.info('preparing video segments for {}...'.format(self.phase))
 		
@@ -184,6 +184,6 @@ class VRDataset(Dataset):
 		# feat[:, 10070: 11070]
 		return feat
 
-def preprocess_data(dataset, param, logger):
-	processor = VRDataset(dataset, param, logger)
+def preprocess_data(cfg, dataset, logger):
+	processor = VRDataset(cfg, dataset, logger)
 	return processor.preprocess()

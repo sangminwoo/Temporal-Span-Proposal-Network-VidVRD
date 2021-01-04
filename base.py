@@ -9,6 +9,7 @@ import torch.multiprocessing as mp
 import numpy as np
 import h5py
 
+from lib.config import cfg
 from lib.dataset import VidVRD, vrdataset
 from lib.modeling import *
 from lib.modeling import trajectory, feature, association
@@ -64,18 +65,15 @@ def load_relation_feature(data_dir):
             extractor.extract_feature(vid, fstart, fend, verbose=True)
 
 
-def preprocessing(args, data_dir):
+def preprocessing(cfg, args, data_dir):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
-
-    with open('default.json', 'r') as fin:
-        param = json.load(fin)
 
     logger = setup_logger(name='preprocess', save_dir='logs', distributed_rank=0, filename=f'{get_timestamp()}_preprocess.txt')
     logger = logging.getLogger('preprocess')
     logger.info(f'args: {args}')
-    logger.info(f'param: {param}')
+    logger.info(f'cfg: {cfg}')
 
-    feats, pred_id = vrdataset.preprocess_data(dataset, param, logger)
+    feats, pred_id = vrdataset.preprocess_data(cfg, dataset, logger)
 
     path = os.path.join('./vidvrd-baseline-output', 'preprocessed_data')
     if not os.path.exists(path):
@@ -89,37 +87,27 @@ def preprocessing(args, data_dir):
     logger.info('successfully saved preprocessed data...')
 
 
-def training(args, data_dir):
+def training(cfg, args, data_dir):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
-
-    with open('default.json', 'r') as fin:
-        param = json.load(fin)
-
-    # param['batch_size'] = int(param['batch_size'] / args.ngpus_per_node)
-    # param['max_sampling_in_batch'] = int(param['max_sampling_in_batch'] / args.ngpus_per_node)
-    # param['num_workers'] = int(param['num_workers'] / args.ngpus_per_node)
 
     # distributed
     args.world_size = args.ngpus_per_node * args.nodes
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
 
-    mp.spawn(train, nprocs=args.ngpus_per_node, args=(args, dataset, param))
+    mp.spawn(train, nprocs=args.ngpus_per_node, args=(cfg, args, dataset))
 
 
-def detect(data_dir):
+def detect(cfg, args, data_dir):
     dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
-
-    with open(os.path.join(get_model_path(), 'baseline_setting.json'), 'r') as fin:
-        param = json.load(fin)
 
     logger = setup_logger(name='detect', save_dir='logs', distributed_rank=0, filename=f'{get_timestamp()}_detect.txt')
     logger = logging.getLogger('detect')
     logger.info(f'args: {args}')
-    logger.info(f'param: {param}')
+    logger.info(f'cfg: {cfg}')
 
     logger.info('predict short term relations')
-    short_term_relations = predict(dataset, param, logger)
+    short_term_relations = predict(cfg, dataset, logger)
 
     logger.info('group short term relations by video')
     video_st_relations = defaultdict(list)
@@ -147,6 +135,7 @@ def detect(data_dir):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='VidVRD baseline')
+    parser.add_argument('--config', type=str, default='configs/baseline.yaml')
     parser.add_argument('--data_dir', type=str, help='dataset directory')
     parser.add_argument('--dataset', type=str, help='the dataset name for training')
     parser.add_argument('--load_feature', action='store_true', default=False, help='Test loading precomputed features')
@@ -158,15 +147,17 @@ if __name__ == '__main__':
     parser.add_argument('--local_rank', default=0, type=int, help='ranking within the nodes')
     args = parser.parse_args()
 
+    cfg.merge_from_file(args.config)
+
     if args.load_feature or args.train or args.detect or args.preprocess:
         if args.load_feature:
             load_object_trajectory_proposal(os.path.join(args.data_dir, args.dataset))
             load_relation_feature(os.path.join(args.data_dir, args.dataset))
         if args.preprocess:
-            preprocessing(args, os.path.join(args.data_dir, args.dataset))
+            preprocessing(cfg, args, os.path.join(args.data_dir, args.dataset))
         if args.train:
-            training(args, os.path.join(args.data_dir, args.dataset))
+            training(cfg, args, os.path.join(args.data_dir, args.dataset))
         if args.detect:
-            detect(os.path.join(args.data_dir, args.dataset))
+            detect(cfg, args, os.path.join(args.data_dir, args.dataset))
     else:
         parser.print_help()

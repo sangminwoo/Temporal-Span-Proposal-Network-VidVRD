@@ -10,15 +10,15 @@ class DPN(nn.Module):
     '''
     Duration Proposal Network
     '''
-    def __init__(self, param):
+    def __init__(self, cfg, in_channels, num_windows):
         super(DPN, self).__init__()
         head = DPNHead(
-            in_channels=param['dpn_in_channels'],
-            num_windows=param['num_windows']
+            in_channels=in_channels,
+            num_windows=num_windows
         )
 
         self.dpn_head = head
-        self.rel_nms = RelNMS(param)
+        self.rel_nms = RelNMS(cfg)
 
     def _get_ground_truth(self, gt_rels):
         return gt_relness, gt_duration
@@ -82,3 +82,11 @@ class DPNHead(nn.Module):
         duration_reg.append(self.duration_pred(t))
 
         return relness, duration_reg
+
+
+def make_dpn(cfg):
+    return DPN(
+        cfg,
+        in_channels = cfg.RELPN.DPN.IN_CHANNELS,
+        num_windows = cfg.RELPN.DPN.NUM_ANCHORS_PER_LOCATION
+    )

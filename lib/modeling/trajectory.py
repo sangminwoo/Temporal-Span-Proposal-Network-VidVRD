@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from lib.modeling import *
 
 
-class Trajectory():
+class Trajectory:
     """
     Object trajectory class that holds the bounding box trajectory and appearance feature (classeme)
     """

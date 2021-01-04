@@ -9,10 +9,10 @@ from lib.utils.miscellaneous import normalize, to_multi_onehot
 from lib.modeling import *
 
 class Preprocess:
-	def __init__(self, dataset, param, logger):
-		self.num_predicates = param['predicate_num']
-		self.rng = np.random.RandomState(param['rng_seed'])
-		self.phase = param['phase']
+	def __init__(self, cfg, dataset, logger):
+		self.num_predicates = cfg.PREDICT.PREDICATE_NUM
+		self.rng = np.random.RandomState(cfg.ETC.RANDOM_SEED)
+		self.phase = cfg.MODEL.PHASE
 		self.logger = logger
 		self.logger.info('preparing video segments for {}...'.format(self.phase))
 		
@@ -255,11 +255,11 @@ class Preprocess:
 		# feat[:, 10070: 11070]
 		return feat
 
-def preprocess_data(dataset, param, logger):
-	processor = Preprocess(dataset, param, logger)
-	if param['phase'] == 'train':
+def preprocess_data(cfg, dataset, logger):
+	processor = Preprocess(cfg, dataset, logger)
+	if cfg.MODEL.PHASE == 'train':
 		feats, pred_id = processor.preprocess()
 		return feats, pred_id
-	elif param['phase'] == 'test':
+	elif cfg.MODEL.PHASE == 'test':
 		index, pairs, feats, iou, trackid = processor.preprocess()
 		return index, pairs, feats, iou, trackid

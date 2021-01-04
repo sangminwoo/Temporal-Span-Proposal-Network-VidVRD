@@ -8,17 +8,17 @@ class PPN(nn.Module):
 	'''
 	Pair Proposal Network
 	'''
-	def __init__(self, param):
+	def __init__(self, cfg):
 		super(PPN, self).__init__()
-		self.num_pairs = param['num_pairs']
+		self.num_pairs = cfg.RELPN.PPN.NUM_PAIR_PROPOSALS
         self.ppn_head = PPNHead(
-            in_channels=param['object_num']*2,
-            out_channels=64
+            in_channels=cfg.RELPN.PPN.IN_CHANNELS,
+            out_channels=cfg.RELPN.PPN.OUT_CHANNELS
         )
 
 		fg_bg_sampler = BalancedPositiveNegativePairSampler(
-	        batch_size_per_image=param['batch_size_per_image'],
-	        positive_fraction=param['positive_fraction']
+	        batch_size_per_image=cfg.RELPN.PPN.BATCH_SIZE_PER_IMAGE,
+	        positive_fraction=cfg.RELPN.PPN.POSITIVE_FRACTION
         )
 
     def _get_ground_truth(self, gt_rels):
@@ -82,3 +82,11 @@ class PPNHead(nn.Module):
         pair_score = torch.mm(sub_emb, obj_emb)
         pair_score = torch.sigmoid(pair_score)
         return pair_score
+
+
+def make_ppn(cfg):
+    return PPN(
+        cfg,
+        in_channels = cfg.RELPN.DPN.IN_CHANNELS,
+        out_channels = cfg.RELPN.DPN.NUM_ANCHORS_PER_LOCATION
+    )

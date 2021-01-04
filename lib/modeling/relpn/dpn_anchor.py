@@ -10,25 +10,25 @@ class DPN(nn.Module):
     '''
     Duration Proposal Network
     '''
-    def __init__(self, param):
+    def __init__(self, cfg, in_channels):
         super(DPN, self).__init__()
-        anchor_generator = make_anchor_generator(param)
+        anchor_generator = make_anchor_generator(cfg)
         head = DPNHead(
-            in_channels=param['dpn_in_channels'],
+            in_channels=in_channels,
             num_anchors=anchor_generator.num_anchors_per_location()[0]
         )
 
-        window_selector_train = make_dpn_postprocessor(param, is_train=True)
-        window_selector_test = make_dpn_postprocessor(param, is_train=False)
-        loss_evaluator = make_dpn_loss_evaluator(param)
+        window_selector_train = make_dpn_postprocessor(cfg, is_train=True)
+        window_selector_test = make_dpn_postprocessor(cfg, is_train=False)
+        loss_evaluator = make_dpn_loss_evaluator(cfg)
         
-        self.dpn_only = param['dpn_only']
+        self.dpn_only = cfg.RELPN.DPN.DPN_ONLY
         self.anchor_generator = anchor_generator
         self.dpn_head = head
         self.window_selector_train = window_selector_train
         self.window_selector_test = window_selector_test
         self.loss_evaluator = loss_evaluator
-        self.rel_nms = RelNMS(param)
+        self.rel_nms = RelNMS(cfg)
 
     def _get_ground_truth(self, gt_rels):
         return gt_relness, gt_duration
@@ -106,3 +106,10 @@ class DPNHead(nn.Module):
             duration_reg.append(self.duration_pred(t))
 
         return relness, duration_reg
+
+
+def make_dpn(cfg):
+    return DPN(
+        cfg,
+        in_channels = cfg.RELPN.DPN.IN_CHANNELS
+    )

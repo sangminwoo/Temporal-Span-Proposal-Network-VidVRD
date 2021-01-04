@@ -1,0 +1,56 @@
+from yacs.config import CfgNode as CN
+
+_C = CN()
+
+""""======================================="""
+_C.MODEL = CN()
+_C.MODEL.NAME = "baseline"
+_C.MODEL.PHASE = "train"
+_C.MODEL.TRAIN_BATCH_SIZE = 1024
+_C.MODEL.TEST_BATCH_SIZE = 1
+""""======================================="""
+_C.SOLVER = CN()
+_C.SOLVER.MAX_EPOCH = 100
+_C.SOLVER.LEARNING_RATE = 1e-2
+_C.SOLVER.WEIGHT_DECAY = 5e-4
+_C.SOLVER.MOMENTUM = 0.9
+_C.SOLVER.EPSILON = 1e-8
+""""======================================="""
+_C.DATALOADER = CN()
+_C.DATALOADER.TRAIN_NUM_WORKERS = 0
+_C.DATALOADER.TEST_NUM_WORKERS = 4
+""""======================================="""
+_C.ETC = CN()
+_C.ETC.RANDOM_SEED = 0
+_C.ETC.DISPLAY_FREQ = 1
+_C.ETC.SAVE_FREQ = 20
+_C.ETC.MODEL_DUMP_FILE = "baseline_weights_epoch_100.pt"
+
+""""======================================="""
+_C.PREDICT = CN()
+_C.PREDICT.OBJECT_NUM = 35
+_C.PREDICT.PREDICATE_NUM = 132
+_C.PREDICT.TOPK_PER_PAIR = 20
+_C.PREDICT.TOPK_PER_SEG = 200
+_C.PREDICT.FEATURE_DIM = 11070
+# _C.PREDICT.TRIPLET_NUM = 2961
+
+""""======================================="""
+_C.RELPN = CN()
+_C.RELPN.OBJECT_DIM = 1024
+
+_C.RELPN.PPN = CN()
+_C.RELPN.PPN.NUM_PAIR_PROPOSALS = 256
+_C.RELPN.PPN.IN_CHANNELS = 1024
+_C.RELPN.PPN.OUT_CHANNELS = 1024
+_C.RELPN.PPN.BATCH_SIZE_PER_IMAGE = 256
+_C.RELPN.PPN.POSITIVE_FRACTION = 0.5
+
+_C.RELPN.DPN = CN()
+_C.RELPN.DPN.NUM_DURATION_PROPOSALS = 64
+_C.RELPN.DPN.DPN_ONLY = False
+_C.RELPN.DPN.IN_CHANNELS = 1024
+_C.RELPN.DPN.NUM_ANCHORS_PER_LOCATION = 4
+_C.RELPN.DPN.ANCHOR_SIZES = 35
+_C.RELPN.DPN.ANCHOR_STRIDE = 132
+

@@ -16,15 +16,15 @@ from lib.utils.comm import synchronize, is_main_process
 from lib.utils.miscellaneous import AverageMeter, calculate_eta 
 from lib.utils.logger import setup_logger, get_timestamp
 from lib.modeling import *
+from lib.modeling.relpn import relpn
 from .model import RelationPredictor
 
-
-def train(gpu, args, dataset, param):
+def train(gpu, cfg, args, dataset):
     rank = args.local_rank * args.ngpus_per_node + gpu
     logger = setup_logger(name='train', save_dir='logs', distributed_rank=rank, filename=f'{get_timestamp()}_train.txt')
     logger = logging.getLogger('train')
     logger.info(f'args: {args}')
-    logger.info(f'param: {param}')
+    logger.info(f'config: {cfg}')
 
     dist.init_process_group(
         backend='nccl',
@@ -34,33 +34,46 @@ def train(gpu, args, dataset, param):
     )
     # synchronize()
 
-    param['phase'] = 'train'
-    param['object_num'] = dataset.get_object_num()
-    param['predicate_num'] = dataset.get_predicate_num()
+    cfg.MODEL.PHASE = 'train'
+    # cfg.PREDICT.OBJECT_NUM = dataset.get_object_num()
+    # cfg.PREDICT.PREDICATE_NUM = dataset.get_predicate_num()
+    max_epoch = cfg.SOLVER.MAX_EPOCH
+    batch_size = cfg.MODEL.TRAIN_BATCH_SIZE
+    num_workers = cfg.DATALOADER.TRAIN_NUM_WORKERS
+    lr = cfg.SOLVER.LEARNING_RATE
+    momentum = cfg.SOLVER.MOMENTUM
+    weight_decay = cfg.SOLVER.WEIGHT_DECAY 
+    display_freq = cfg.ETC.DISPLAY_FREQ
+    save_freq = cfg.ETC.SAVE_FREQ
+    model_dump_file = cfg.ETC.MODEL_DUMP_FILE
+    model_name = cfg.MODEL.NAME
 
-    train_data = VRDataset(dataset, param, logger)
+    train_data = VRDataset(cfg, dataset, logger)
     data_sampler = DistributedSampler(train_data, num_replicas=args.world_size, rank=rank)
-    data_loader = DataLoader(dataset=train_data, batch_size=param['batch_size'], shuffle=False,
-        num_workers=0, pin_memory=True, sampler=data_sampler)
+    data_loader = DataLoader(
+        dataset=train_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        sampler=data_sampler
+    )
 
-    # logger.info('Feature dimension is {}'.format(param['feature_dim']))
-    # logger.info('Number of observed training triplets is {}'.format(param['triplet_num']))
-
-    model = RelationPredictor(param)
+    model = RelationPredictor(cfg)
     torch.cuda.set_device(gpu)
     model = model.cuda(gpu)
     model = DistributedDataParallel(model, device_ids=[gpu])
     model.train()
 
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=param['learning_rate'], weight_decay=param['weight_decay'])
-    # optimizer = torch.optim.SGD(params=model.parameters(), momentum=param['momentum'], lr=param['learning_rate'], weight_decay=param['weight_decay'])
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=lr, weight_decay=weight_decay)
+    # optimizer = torch.optim.SGD(params=model.parameters(), momentum=momentum, lr=lr, weight_decay=weight_decay)
     criterion = nn.BCELoss()
 
     loss_meter = AverageMeter()
     time_meter = AverageMeter()
     end = time.time()
 
-    for epoch in range(param['max_epoch']):
+    for epoch in range(max_epoch):
         try:
             # feats: 64x11070 (batch_Size x feature_dim), pred_id: 64 (batch_size)
             for iteration, (feats, pred_id) in enumerate(data_loader):
@@ -81,10 +94,10 @@ def train(gpu, args, dataset, param):
                 end = time.time()
                 time_meter.update(batch_time)
                 # time_meter.update(batch_time, output.shape[0])
-                eta_seconds = calculate_eta(time_meter.avg, epoch, param['max_epoch'], iteration, len(data_loader)) 
+                eta_seconds = calculate_eta(time_meter.avg, epoch, max_epoch, iteration, len(data_loader)) 
                 eta_string = str(timedelta(seconds=int(eta_seconds)))
 
-                if iteration % param['display_freq'] == 0 and is_main_process():
+                if iteration % display_freq == 0 and is_main_process():
                     logger.info(
                         '  '.join(
                             [
@@ -95,7 +108,7 @@ def train(gpu, args, dataset, param):
                             ]
                         ).format(
                             epoch=epoch+1,
-                            max_epoch=param['max_epoch'],
+                            max_epoch=max_epoch,
                             iteration=iteration+1,
                             max_iter=len(data_loader),
                             loss=loss_meter.val,
@@ -105,13 +118,13 @@ def train(gpu, args, dataset, param):
                         )
                     )
 
-            if (epoch+1) % param['save_freq'] == 0 and is_main_process():
-                param['model_dump_file'] = '{}_weights_epoch_{}.pt'.format(param['model_name'], epoch+1)
+            if (epoch+1) % save_freq == 0 and is_main_process():
+                model_dump_file = '{}_weights_epoch_{}.pt'.format(model_name, epoch+1)
                 torch.save({'model': model.state_dict(),
                             'optimizer': optimizer.state_dict(),
                             'loss': loss_meter.avg,
                             'epoch': epoch+1},
-                            os.path.join(get_model_path(), param['model_dump_file']))
+                            os.path.join(get_model_path(), model_dump_file))
 
         except KeyboardInterrupt:
             logger.info('Early Stop.')
@@ -121,13 +134,13 @@ def train(gpu, args, dataset, param):
             return
 
         # save model
-        param['model_dump_file'] = '{}_weights_epoch_{}.pt'.format(param['model_name'], param['max_epoch'])
+        model_dump_file = '{}_weights_epoch_{}.pt'.format(model_name, max_epoch)
         torch.save({'model': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'loss': loss_meter.avg,
                     'epoch': epoch+1},
-                    os.path.join(get_model_path(), param['model_dump_file']))
+                    os.path.join(get_model_path(), model_dump_file))
 
     # save settings
-    with open(os.path.join(get_model_path(), '{}_setting.json'.format(param['model_name'])), 'w') as fout:
-        json.dump(param, fout, indent=4)
+    with open(os.path.join(get_model_path(), '{}_config.yaml'.format(model_name)), 'w') as fout:
+        fout.write(cfg.dump())

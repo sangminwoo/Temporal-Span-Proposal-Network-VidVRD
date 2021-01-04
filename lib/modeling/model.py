@@ -3,11 +3,11 @@ import torch.nn as nn
 
 
 class RelationPredictor(nn.Module):
-    def __init__(self, param):
+    def __init__(self, cfg):
         super(RelationPredictor, self).__init__()
-        self.classifier = nn.Linear(param['feature_dim'], param['predicate_num'])
+        self.linear = nn.Linear(cfg.PREDICT.FEATURE_DIM, cfg.PREDICT.PREDICATE_NUM)
 
     def forward(self, feats):
-        relation = self.classifier(feats) # 64x11070 -> 64x132
+        relation = self.linear(feats) # 64x11070 -> 64x132
         relation = torch.sigmoid(relation) # for multi-label classification
         return relation

@@ -8,7 +8,7 @@ import torchvision
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
-from .i3res import I3ResNet
+from i3res import I3ResNet
 
 # To profile uncomment @profile and run `kernprof -lv inflate_resnet.py`
 # @profile
@@ -23,8 +23,11 @@ def run_inflater(args):
                                        normalize,
                                    ]))
 
-    class_idx = {0: 'airplane', 1: 'antelope', 2: 'ball', 3: 'bear', 4: 'bicycle', 5: 'bird', 6: 'bus', 7: 'car', 8: 'cattle', 9: 'dog', 10: 'domestic_cat', 11: 'elephant', 12: 'fox', 13: 'frisbee', 14: 'giant_panda', 15: 'hamster', 16: 'horse', 17: 'lion', 18: 'lizard', 19: 'monkey', 20: 'motorcycle', 21: 'person', 22: 'rabbit', 23: 'red_panda', 24: 'sheep', 25: 'skateboard', 26: 'snake', 27: 'sofa', 28: 'squirrel', 29: 'tiger', 30: 'train', 31: 'turtle', 32: 'watercraft', 33: 'whale', 34: 'zebra'}
-    classes = [category for category in class_idx.values()]
+    # class_idx = {0: 'airplane', 1: 'antelope', 2: 'ball', 3: 'bear', 4: 'bicycle', 5: 'bird', 6: 'bus', 7: 'car', 8: 'cattle', 9: 'dog', 10: 'domestic_cat', 11: 'elephant', 12: 'fox', 13: 'frisbee', 14: 'giant_panda', 15: 'hamster', 16: 'horse', 17: 'lion', 18: 'lizard', 19: 'monkey', 20: 'motorcycle', 21: 'person', 22: 'rabbit', 23: 'red_panda', 24: 'sheep', 25: 'skateboard', 26: 'snake', 27: 'sofa', 28: 'squirrel', 29: 'tiger', 30: 'train', 31: 'turtle', 32: 'watercraft', 33: 'whale', 34: 'zebra'}
+    # classes = [category for category in class_idx.values()]
+
+    class_idx = json.load(open('imagenet_class_index.json'))
+    classes = [class_idx[str(k)][1] for k in range(len(class_idx))]
 
     if args.resnet_nb == 50:
         resnet = torchvision.models.resnet50(pretrained=True)
@@ -36,7 +39,7 @@ def run_inflater(args):
         raise ValueError('resnet_nb should be in [50|101|152] but got {}'
                          ).format(args.resnet_nb)
 
-    loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=2, shuffle=False)
     i3resnet = I3ResNet(copy.deepcopy(resnet), args.frame_nb)
     i3resnet.train()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

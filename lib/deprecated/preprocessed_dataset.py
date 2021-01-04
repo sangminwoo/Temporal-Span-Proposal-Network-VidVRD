@@ -5,9 +5,9 @@ import json
 from torch.utils.data import Dataset
 
 class VRDDataset(Dataset):
-	def __init__(self, param, logger):
-		self.rng = np.random.RandomState(param['rng_seed'])
-		self.phase = param['phase']
+	def __init__(self, cfg, logger):
+		self.rng = np.random.RandomState(cfg.ETC.RANDOM_SEED)
+		self.phase = cfg.MODEL.PHASE
 		self.logger = logger
 		self.logger.info('loading preprocessed video segments for {}...'.format(self.phase))
 		

@@ -10,21 +10,30 @@ from lib.dataset.vrdataset import VRDataset
 from lib.utils.serialize import load_checkpoint
 
 
-def predict(dataset, param, logger):
-    param['phase'] = 'test'
+def predict(cfg, dataset, logger):
+    cfg.MODEL.PHASE = 'test'
+    batch_size = cfg.MODEL.TEST_BATCH_SIZE
+    num_workers = cfg.DATALOADER.TEST_NUM_WORKERS
+    topk_per_pair = cfg.PREDICT.TOPK_PER_PAIR
+    topk_per_seg = cfg.PREDICT.TOPK_PER_SEG
 
     # load model
-    model = RelationPredictor(param)
-    checkpoint = torch.load(os.path.join(get_model_path(), param['model_dump_file']))
+    model = RelationPredictor(cfg)
+    checkpoint = torch.load(os.path.join(get_model_path(), cfg.ETC.MODEL_DUMP_FILE))
     load_checkpoint(model, checkpoint['model'])
     logger.info(f"=> checkpoint succesfully loaded")
     logger.info(f"=> epoch: {checkpoint['epoch']}")
     logger.info(f"=> average loss:{checkpoint['loss']:.4f}")
     model.eval()
 
-    test_data = VRDataset(dataset, param, logger)
-    data_loader = DataLoader(dataset=test_data, batch_size=1, shuffle=False,
-        num_workers=4, pin_memory=False)
+    test_data = VRDataset(cfg, dataset, logger)
+    data_loader = DataLoader(
+        dataset=test_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=False
+    )
 
     path = os.path.join('vidvrd-baseline-output', 'preprocessed_data')
     logger.info('predicting short-term visual relation...')
@@ -90,14 +99,14 @@ def predict(dataset, param, logger):
 
                 # pick top-20 predictions per pair
                 topk_pred_per_pair = torch.sort(prob_p, dim=-1) 
-                topk_score_per_pair = topk_pred_per_pair[0][:param['topk_per_pair']] # N(N-1) x topk
-                topk_idx_per_pair = topk_pred_per_pair[1][:param['topk_per_pair']] # N(N-1) x topk
+                topk_score_per_pair = topk_pred_per_pair[0][:topk_per_pair] # N(N-1) x topk
+                topk_idx_per_pair = topk_pred_per_pair[1][:topk_per_pair] # N(N-1) x topk
                 r, c = topk_score_per_pair.shape
 
                 # pick top-200 predictions per segment
                 topk_pred_per_seg = torch.sort(topk_score_per_pair.flatten(), descending=True, dim=-1)
-                topk_score_per_seg = topk_pred_per_seg[0][:param['topk_per_seg']] # K
-                topk_idx_per_seg = topk_pred_per_seg[1][:param['topk_per_seg']] # K
+                topk_score_per_seg = topk_pred_per_seg[0][:topk_per_seg] # K
+                topk_idx_per_seg = topk_pred_per_seg[1][:topk_per_seg] # K
                 topk_idx = torch.tensor(
                     [(idx // c, idx % c) for idx in topk_idx_per_seg]
                 ) # topK x 2

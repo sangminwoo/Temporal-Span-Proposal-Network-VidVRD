@@ -104,9 +104,9 @@ def _mkanchors(ws, ctr):
     return anchors
 
 
-def make_anchor_generator(param):
-    anchor_sizes = param['anchor_sizes']
-    anchor_stride = param['anchor_stride']
+def make_anchor_generator(cfg):
+    anchor_sizes = cfg.RELPN.DPN.ANCHOR_SIZES
+    anchor_stride = cfg.RELPN.DPN.ANCHOR_STRIDE
     assert len(anchor_stride) == 1, "should have a single ANCHOR_STRIDE"
 
     anchor_generator = AnchorGenerator(anchor_sizes, anchor_stride)
