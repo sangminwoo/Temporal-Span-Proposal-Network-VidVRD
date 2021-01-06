@@ -48,7 +48,7 @@ class PPN(nn.Module):
 
         return gt_matrices
 
-    def forward(self, pair_list, target_list):
+    def forward(self, pair_list, target_list=None):
         if self.training:
             return self._forward_train(pair_list, target_list)
         else:

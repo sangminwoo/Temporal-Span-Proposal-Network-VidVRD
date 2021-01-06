@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import logging
 import time
 from datetime import datetime, timedelta
@@ -105,13 +106,13 @@ def train(gpu, cfg, args, basedata):
                     )
                 )
 
-            if iteration % save_freq == 0 and is_main_process():
-                model_dump_file = '{}_weights_iter_{}.pt'.format(model_name, iteration+1)
+            if (iteration+1) % save_freq == 0 and is_main_process():
+                cfg.ETC.MODEL_DUMP_FILE = '{}_weights_iter_{}.pt'.format(model_name, iteration+1)
                 torch.save({'model': model.state_dict(),
                             'optimizer': optimizer.state_dict(),
                             'loss': meters.loss.global_avg,
                             'iter': iteration+1},
-                            os.path.join(get_model_path(), model_dump_file))
+                            os.path.join(get_model_path(), cfg.ETC.MODEL_DUMP_FILE))
 
     except KeyboardInterrupt:
         logger.info('Early Stop.')
@@ -120,13 +121,15 @@ def train(gpu, cfg, args, basedata):
             return
 
         # save model
-        model_dump_file = '{}_weights_iter_{}.pt'.format(model_name, max_iter)
+        cfg.ETC.MODEL_DUMP_FILE = '{}_weights_iter_{}.pt'.format(model_name, max_iter)
         torch.save({'model': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'loss': meters.loss.global_avg,
-                    'iter': iteration+1},
-                    os.path.join(get_model_path(), model_dump_file))
+                    'iter': max_iter},
+                    os.path.join(get_model_path(), cfg.ETC.MODEL_DUMP_FILE))
 
-    # save settings
-    with open(os.path.join(get_model_path(), '{}_config.yaml'.format(model_name)), 'w') as fout:
-        fout.write(cfg.dump())
+        # save settings
+        with open('configs/{}_config.yaml'.format(model_name), 'w') as fout:
+            yaml.dump(cfg, fout)
+
+        logger.info('Training Finished Successfully.')

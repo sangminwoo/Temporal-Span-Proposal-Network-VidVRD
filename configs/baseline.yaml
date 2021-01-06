@@ -21,3 +21,4 @@ ETC:
   RANDOM_SEED: 0
   DISPLAY_FREQ: 1
   SAVE_FREQ: 1000
+  MODEL_DUMP_FILE: "baseline_weights_iter_2000.pt"

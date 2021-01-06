@@ -21,87 +21,66 @@ class VRDataset(Dataset):
 		self.use_gt_obj_trajs = cfg.DATASET.USE_GT_OBJ_TRAJS
 		
 		video_indices = dataset.get_index(split=self.phase)
-		if self.phase == 'train':
-			self.trajs = dict()
-			self.gt_rel_insts = defaultdict(list)
+		self.gt_rel_insts = defaultdict(list)
 
-			for vid in video_indices:
-				for rel_inst in dataset.get_relation_insts(vid, no_traj=True):
-					'''
-					rel_inst = {
-						'triplet': ('dog', 'bite', 'frisbee'),
-						'subject_tid': 0,
-						'object_tid': 1,
-						'duration': (60, 90)
-					}
-					'''
-					sub_name, pred_name, obj_name = rel_inst['triplet']
-					sub_tid = rel_inst['subject_tid'], # 1st in current segment
-					obj_tid = rel_inst['object_tid'], # 3rd in current segment
-					sub_idx = dataset.get_object_id(sub_name), # 2: car
-					obj_idx = dataset.get_object_id(obj_name) # 4: bus
-					pred_idx = dataset.get_predicate_id(pred_name) # 68: faster
-					
-					segs = segment_video(*rel_inst['duration'])
-					for fstart, fend in segs:
-						if self._get_rel_feature(vid, fstart, fend, dont_return=True, verbose=False):
-							self.gt_rel_insts[(vid, fstart, fend)].append(
-								(sub_tid, obj_tid, sub_idx, obj_idx, pred_idx)
-							)
-			self.index = list(self.gt_rel_insts.keys())
-
-		elif self.phase == 'test':
-			self.index = []
-			for vid in video_indices:
+		for vid in video_indices:
+			if self.phase == 'test':
 				anno = dataset.get_anno(vid)
 
-				segs = segment_video(0, anno['frame_count'])
+			for rel_inst in dataset.get_relation_insts(vid, no_traj=True):
+				'''
+				rel_inst = {
+					'triplet': ('dog', 'bite', 'frisbee'),
+					'subject_tid': 0,
+					'object_tid': 1,
+					'duration': (60, 90)
+				}
+				'''
+				sub_name, pred_name, obj_name = rel_inst['triplet']
+				sub_tid = rel_inst['subject_tid'], # 1st in current segment
+				obj_tid = rel_inst['object_tid'], # 3rd in current segment
+				sub_idx = dataset.get_object_id(sub_name), # 2: car
+				obj_idx = dataset.get_object_id(obj_name) # 4: bus
+				pred_idx = dataset.get_predicate_id(pred_name) # 68: faster
+				
+				if self.phase == 'train':
+					segs = segment_video(*rel_inst['duration'])
+				else:
+					segs = segment_video(0, anno['frame_count'])
+
 				for fstart, fend in segs:
 					if self._get_rel_feature(vid, fstart, fend, dont_return=True, verbose=False):
-						self.index.append(
-							(vid, fstart, fend)
+						self.gt_rel_insts[(vid, fstart, fend)].append(
+							(sub_tid, obj_tid, sub_idx, obj_idx, pred_idx)
 						)
-
-		else:
-			raise ValueError('Unknown phase: {}'.format(self.phase))
-
+		self.index = list(self.gt_rel_insts.keys())
 
 	def __len__(self):
 		return len(self.index)
 
 	def __getitem__(self, idx):
-		if self.phase == 'train':
-			index = self.index[idx]
+		index = self.index[idx]
 
-			pairs, feats, iou, trackid = self._get_rel_feature(*index)
-			feats, pairs, pred_labels = self._get_proposals_rel_feature(*index, pairs, feats, iou, trackid)
-			proposal_idx = self._get_proposal_idx(pairs, trackid)
-			feats, pairs, pred_labels = feats[proposal_idx], pairs[proposal_idx], pred_labels[proposal_idx]
+		pairs, feats, iou, trackid = self._get_rel_feature(*index)
+		feats, pairs, pred_labels = self._get_proposals_rel_feature(*index, pairs, feats, iou, trackid)
+		proposal_idx = self._get_proposal_idx(pairs, trackid)
+		feats, pairs, pred_labels = feats[proposal_idx], pairs[proposal_idx], pred_labels[proposal_idx]
 
-			cls_logits = self._get_class_logit(*index)
+		cls_logits = self._get_class_logit(*index)
 
-			num_tracks = self._get_num_tracklet_proposals(trackid)
-			
-			feats = self._feature_preprocess(feats)
+		num_tracks = self._get_num_tracklet_proposals(trackid)
+		
+		feats = self._feature_preprocess(feats)
 
-			pair_list = PairList(feats)
-			pair_list.add_field('tracklet_pairs', pairs)
-			pair_list.add_field('track_cls_logits', cls_logits)
-			pair_list.add_field('num_tracklets', num_tracks)
+		pair_list = PairList(feats)
+		pair_list.add_field('tracklet_pairs', pairs)
+		pair_list.add_field('track_cls_logits', cls_logits)
+		pair_list.add_field('num_tracklets', num_tracks)
+		pair_list.add_field('ious', iou)
+		pair_list.add_field('track_ids', trackid)
+		target_list = TargetList(pred_labels)
 
-			target_list = TargetList(pred_labels)
-
-			return pair_list, target_list, index
-		else:
-			index = self.index[idx]
-
-			pairs, feats, iou, trackid = self._get_rel_feature(*index)
-			proposal_idx = self._get_proposal_idx(pairs, trackid)
-			pairs = pairs[proposal_idx]
-
-			feats = self._feature_preprocess(feats[proposal_idx])
-
-			return index, pairs, feats, iou, trackid
+		return pair_list, target_list, index
 
 	def _get_proposals_rel_feature(self, vid, fstart, fend, pairs, feats, iou, trackid, iou_thres=0.5):
 		feats = torch.tensor(feats, dtype=torch.float32)

@@ -31,7 +31,7 @@ class DPN(nn.Module):
         gt_duration = [tlist.get_field('duration') for tlist in target_list]
         return gt_duration
 
-    def forward(self, pair_list, target_list, pair_proposals):
+    def forward(self, pair_list, target_list=None):
         if self.training:
             return self._forward_train(pair_list, target_list)
         else:

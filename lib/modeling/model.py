@@ -17,13 +17,7 @@ class BaseModel(nn.Module):
 			out_channels=cfg.PREDICT.PREDICATE_NUM
 		)
 
-		# pair_feats = pair_lists.features
-		# track_pairs = pair_lists.get_field('tracklet_pairs')
-		# track_cls_logits = pair_lists.get_field('track_cls_logits')
-		# num_tracks = pair_lists.get_field('num_tracklets')
-		# targets = target_list.target
-
-	def forward(self, pair_list, target_list):
+	def forward(self, pair_list, target_list=None):
 		if self.training:
 			return self._forward_train(pair_list, target_list)
 		else:
@@ -47,8 +41,8 @@ class BaseModel(nn.Module):
 		# for multi-label classification
 		loss_relation = 0
 		for reloi_feat, target in zip(reloi_feats, targets):
-			relation = self.classifier(reloi_feat) # batch x pair_per_seg x 11070
-			loss_relation += F.binary_cross_entropy_with_logits(relation, target)
+			rel_logit = self.classifier(reloi_feat) # batch x pair_per_seg x 11070
+			loss_relation += F.binary_cross_entropy_with_logits(rel_logit, target)
 
 		loss_rel = {
 			"loss_rel": loss_relation
@@ -57,10 +51,18 @@ class BaseModel(nn.Module):
 		return loss_dict
 
 	def _forward_test(self, pair_list):
-		pair_proposals, duration_proposals, _ = self.relpn(pair_list, target_list)
+		pair_proposals = None
+		duration_proposals = None
+
+		feats = [plist.features for plist in pair_list]
+
+		pair_proposals, duration_proposals, _ = self.relpn(pair_list)
 		reloi_feats = self.rel_of_interest_pool(feats, duration_proposals)
-		relations = self.classifier(reloi_feats)
-		return pair_proposals, duration_proposals, relations
+		
+		rel_logits = []
+		for reloi_feat in reloi_feats:
+			rel_logits.append(self.classifier(reloi_feat)) # batch x pair_per_seg x 11070
+		return pair_proposals, duration_proposals, rel_logits
 
 
 class RelOIPool:
@@ -81,5 +83,5 @@ class RelationPredictor(nn.Module):
 			torch.nn.init.constant_(l.bias, 0)
 
 	def forward(self, reloi_feats):
-		relations = self.rel_predictor(reloi_feats)
-		return relations
+		rel_logit = self.rel_predictor(reloi_feats)
+		return rel_logit
