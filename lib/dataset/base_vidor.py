@@ -4,7 +4,7 @@ import glob
 from .dataset import DatasetV1
 
 
-class VidOR(DatasetV1):
+class BaseVidOR(DatasetV1):
     """
     The dataset used in ACM MM'19 Relation Understanding Challenge
     """
@@ -17,7 +17,7 @@ class VidOR(DatasetV1):
         low_memory: if true, do not load memory-costly part 
                     of annotations (trajectories) into memory
         """
-        super(VidOR, self).__init__(anno_rpath, video_rpath, splits, low_memory)
+        super(BaseVidOR, self).__init__(anno_rpath, video_rpath, splits, low_memory)
         print('VidOR dataset loaded. {}'.format('(low memory mode enabled)' if low_memory else ''))
 
     def _get_anno_files(self, split):
@@ -60,7 +60,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # to load the trainning set without low memory mode for faster processing, you need sufficient large RAM
-    dataset = VidOR('/home/t2_u1/data/vidor/annotation', '/home/t2_u1/data/vidor/video', ['training', 'validation'], low_memory=True)
+    dataset = BaseVidOR('/home/t2_u1/data/vidor/annotation', '/home/t2_u1/data/vidor/video', ['training', 'validation'], low_memory=True)
     index = dataset.get_index(args.split)
 
     # print(dataset.soid2so)

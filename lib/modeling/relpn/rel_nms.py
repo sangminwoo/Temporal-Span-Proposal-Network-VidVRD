@@ -9,7 +9,7 @@ class RelNMS(nn.Module):
 		self.bg_iou_threshold = 0.3
 		self.nms_threshold = 0.5
 		self.top_k_proposals = cfg.RELPN.DPN.NUM_DURATION_PROPOSALS
-		self.anchor = 
+		self.anchor = None
 
 	def forward(self, relationness, duration_proposals):
 		relationness

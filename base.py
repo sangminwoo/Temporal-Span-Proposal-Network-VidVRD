@@ -10,70 +10,23 @@ import numpy as np
 import h5py
 
 from lib.config import cfg
-from lib.dataset import VidVRD, vrdataset
+from lib.dataset import vrdataset, BaseVidVRD, BaseVidOR
 from lib.modeling import *
-from lib.modeling import trajectory, feature, association
+from lib.modeling import association
 from lib.modeling.train import train
 from lib.modeling.predict import predict
 from lib.utils.logger import setup_logger, get_timestamp
 
 
-def load_object_trajectory_proposal(data_dir):
-    """
-    Test loading precomputed object trajectory proposals
-    """
-    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
-
-    video_indices = dataset.get_index(split='train')
-    for vid in video_indices:
-        durations = set(rel_inst['duration'] for rel_inst in dataset.get_relation_insts(vid, no_traj=True))
-        for duration in durations:
-            segs = segment_video(*duration)
-            for fstart, fend in segs:
-                trajs = trajectory.object_trajectory_proposal(dataset, vid, fstart, fend, gt=False, verbose=True)
-                trajs = trajectory.object_trajectory_proposal(dataset, vid, fstart, fend, gt=True, verbose=True)
-
-    video_indices = dataset.get_index(split='test')
-    for vid in video_indices:
-        anno = dataset.get_anno(vid)
-        segs = segment_video(0, anno['frame_count'])
-        for fstart, fend in segs:
-            trajs = trajectory.object_trajectory_proposal(dataset, vid, fstart, fend, gt=False, verbose=True)
-            trajs = trajectory.object_trajectory_proposal(dataset, vid, fstart, fend, gt=True, verbose=True)
-
-
-def load_relation_feature(data_dir):
-    """
-    Test loading precomputed relation features
-    """
-    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
-    extractor = feature.FeatureExtractor(dataset, prefetch_count=0)
-
-    video_indices = dataset.get_index(split='train')
-    for vid in video_indices:
-        durations = set(rel_inst['duration'] for rel_inst in dataset.get_relation_insts(vid, no_traj=True))
-        for duration in durations:
-            segs = segment_video(*duration)
-            for fstart, fend in segs:
-                extractor.extract_feature(vid, fstart, fend, verbose=True)
-
-    video_indices = dataset.get_index(split='test')
-    for vid in video_indices:
-        anno = dataset.get_anno(vid)
-        segs = segment_video(0, anno['frame_count'])
-        for fstart, fend in segs:
-            extractor.extract_feature(vid, fstart, fend, verbose=True)
-
-
 def preprocessing(cfg, args, data_dir):
-    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
+    dataset = BaseVidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     logger = setup_logger(name='preprocess', save_dir='logs', distributed_rank=0, filename=f'{get_timestamp()}_preprocess.txt')
     logger = logging.getLogger('preprocess')
     logger.info(f'args: {args}')
     logger.info(f'cfg: {cfg}')
 
-    feats, pred_id = vrdataset.preprocess_data(cfg, dataset, logger)
+    feats, pairs, pred_label = vrdataset.preprocess_data(cfg, dataset, logger)
 
     path = os.path.join('./vidvrd-baseline-output', 'preprocessed_data')
     if not os.path.exists(path):
@@ -82,24 +35,25 @@ def preprocessing(cfg, args, data_dir):
     logger.info('saving preprocessed data...')
     with h5py.File(os.path.join(path,'preprocessed_train_dataset.hdf5'), 'a') as f:
         f['feats'] = feats
-        f['pred_id'] = pred_id
+        f['pairs'] = pairs
+        f['pred_label'] = pred_label
 
     logger.info('successfully saved preprocessed data...')
 
 
 def training(cfg, args, data_dir):
-    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
+    basedata = BaseVidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     # distributed
     args.world_size = args.ngpus_per_node * args.nodes
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
 
-    mp.spawn(train, nprocs=args.ngpus_per_node, args=(cfg, args, dataset))
+    mp.spawn(train, nprocs=args.ngpus_per_node, args=(cfg, args, basedata))
 
 
 def detect(cfg, args, data_dir):
-    dataset = VidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
+    basedata = BaseVidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
 
     logger = setup_logger(name='detect', save_dir='logs', distributed_rank=0, filename=f'{get_timestamp()}_detect.txt')
     logger = logging.getLogger('detect')
@@ -107,7 +61,7 @@ def detect(cfg, args, data_dir):
     logger.info(f'cfg: {cfg}')
 
     logger.info('predict short term relations')
-    short_term_relations = predict(cfg, dataset, logger)
+    short_term_relations = predict(cfg, basedata, logger)
 
     logger.info('group short term relations by video')
     video_st_relations = defaultdict(list)
@@ -119,7 +73,7 @@ def detect(cfg, args, data_dir):
     video_relations = dict()
     for vid in tqdm(video_st_relations.keys()):
         video_relations[vid] = association.greedy_relational_association(
-            dataset,
+            basedata,
             video_st_relations[vid],
             max_traj_num_in_clip=100
         )
@@ -138,7 +92,6 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, default='configs/baseline.yaml')
     parser.add_argument('--data_dir', type=str, help='dataset directory')
     parser.add_argument('--dataset', type=str, help='the dataset name for training')
-    parser.add_argument('--load_feature', action='store_true', default=False, help='Test loading precomputed features')
     parser.add_argument('--preprocess', action='store_true', default=False, help='Preprocess dataset')
     parser.add_argument('--train', action='store_true', default=False, help='Train model')
     parser.add_argument('--detect', action='store_true', default=False, help='Detect video visual relation')
@@ -149,10 +102,7 @@ if __name__ == '__main__':
 
     cfg.merge_from_file(args.config)
 
-    if args.load_feature or args.train or args.detect or args.preprocess:
-        if args.load_feature:
-            load_object_trajectory_proposal(os.path.join(args.data_dir, args.dataset))
-            load_relation_feature(os.path.join(args.data_dir, args.dataset))
+    if args.train or args.detect or args.preprocess:
         if args.preprocess:
             preprocessing(cfg, args, os.path.join(args.data_dir, args.dataset))
         if args.train:

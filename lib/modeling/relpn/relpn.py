@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class RelOIPool:
-	def __call__(self, rel_feats, duration_proposals):
-		return rel_feats[duration_proposals]
+from .ppn import make_ppn
+from .dpn import make_dpn
+
 
 class RelPN(nn.Module):
 	'''
@@ -12,98 +12,41 @@ class RelPN(nn.Module):
 		Pair Proposal Network (PPN) + Relationship Duration Proposal Network (DPN)
 	'''
 	def __init__(self, cfg):
-		super(PPN, self).__init__()
-		self.pair_proposal_network = PPN(cfg)
-		self.duration_proposal_network = DPN(cfg)
-		self.rel_of_interest_pool = RelOIPool(cfg)
-		self.rel_predictor = nn.Linear()
-
-		self.rel_feature_extractor = RelFeatureExtractor(
-			in_channels=cfg.RELPN.OBJECT_DIM*2,
-			out_channels=cfg.RELPN.OBJECT_DIM
-		)
-		self.relpn_head = RelPNHead(
-			in_channels=cfg.RELPN.OBJECT_DIM,
-			out_channels=cfg.PREDICT.PREDICATE_NUM
-		)
-
-	def _get_ground_truth(self, gt_rels):
-		return gt_relations
-
-	def forward(self, obj_feats, gt_rels):
+		super(RelPN, self).__init__()
+		self.use_ppn = cfg.RELPN.USE_PPN
+		self.use_dpn = cfg.RELPN.USE_DPN
+		self.pair_proposal_network = make_ppn(cfg)
+		self.duration_proposal_network = make_dpn(cfg)
+		
+	def forward(self, pair_list, target_list):
 		if self.training:
-			return self._forward_train(obj_feats, gt_rels)
+			return self._forward_train(pair_list, target_list)
 		else:
-			return self._forward_test(obj_feats)
+			return self._forward_test(pair_list)
 
-	def _forward_train(self, obj_feats, gt_rels):
-		'''
-		obj_feats: NxCxTxHxW
-		rel_feats: NxCxT
-		'''
-		gt_relations = self._get_ground_truth(gt_rels)
+	def _forward_train(self, pair_list, target_list):
+		relpn_losses = {}
+		pair_proposals = None
+		duration_proposals = None
 		
-		pair_proposals, loss_ppn = self.pair_proposal_network(obj_feats, gt_rels)
-		
-		rel_feats = self.rel_feature_extractor(obj_feats, pair_proposals)
-		relationness, duration_proposals, loss_dpn = self.duration_proposal_network(rel_feats, gt_rels)
+		# relationship pair proposal: "What object pairs are related? Are object A and B related?"
+		if self.use_ppn:
+			pair_proposals, loss_ppn = self.pair_proposal_network(pair_list, target_list)
+			relpn_losses.update(loss_ppn)
 
-		rel_feats = self.rel_of_interest_pool(rel_feats, duration_proposals)
-		relations = self.relpn_head(rel_feats)
-		loss_relation = F.cross_entropy(relations, gt_relations)
+		# relationship duration proposal: "How long the relation lasts? From t=0 to t=30?"
+		if self.use_dpn:
+			duration_proposals, loss_dpn = self.duration_proposal_network(pair_list, target_list, pair_proposals)
+			relpn_losses.update(loss_dpn)
 
-		losses = {
-			'loss_pair':loss_ppn['loss_pair'],
-			'loss_relationness':loss_dpn['loss_relationness'],
-			'loss_duration_reg':loss_dpn['loss_duration_reg'],
-			'loss_rel':loss_relation,
-		}
-		return pair_proposals, relations, duration_proposals, losses
+		return pair_proposals, duration_proposals, relpn_losses
 
-	def _forward_test(self, obj_feats):
-		pair_proposals, _ = self.pair_proposal_network(obj_feats, gt_rels)
+	def _forward_test(self, pair_list, target_list):
+		pair_proposals, _ = self.pair_proposal_network(pair_list, target_list)
 
-		rel_feats = self.rel_feature_extractor(obj_feats, pair_proposals)
-		relationness, duration_proposals, _ = self.duration_proposal_network(rel_feats, gt_rels)
+		duration_proposals, _ = self.duration_proposal_network(pair_list, target_list, pair_proposals)
 
-		rel_feats = self.rel_of_interest_pool(rel_feats, duration_proposals)
-		relations = self.relpn_head(rel_feats)
-		return pair_proposals, relations, duration_proposals, {}
-
-
-class RelFeatureExtractor(nn.Module):
-	def __init__(self, in_channels, out_channels):
-		super(RelFeatureExtractor, self).__init__()
-		self.rel_feature_extractor = nn.Sequential(
-			nn.Linear(in_channels, out_channels),
-			nn.ReLU(True),
-			nn.Linear(out_channels, out_channels)
-		)
-
-		for l in [self.rel_feature_extractor]:
-			torch.nn.init.normal_(l.weight, std=0.01)
-			torch.nn.init.constant_(l.bias, 0)
-
-	def forward(self, obj_feats, pair_proposals):
-		head_feats = obj_feats[pair_proposals[:, 0]] # 10x1024
-		tail_feats = obj_feats[pair_proposals[:, 1]] # 10x1024
-		pair_feats = torch.cat([head_feats, tail_feats], dim=1) # 10x2048
-		rel_feats = self.rel_feature_extractor(pair_feats) # 10x2048 -> 10x1024
-		return rel_feats
-
-
-class RelPNHead(nn.Module):
-	def __init__(self, in_channels, out_channels):
-		super(RelPNHead, self).__init__()
-		self.rel_predictor = nn.Linear(in_channels, out_channels)
-
-		for l in [self.rel_predictor]:
-			torch.nn.init.normal_(l.weight, std=0.01)
-			torch.nn.init.constant_(l.bias, 0)
-
-	def _predict_relations(self, rel_feats):
-		relations = self.rel_predictor(rel_feats)
-		return relations
+		return pair_proposals, duration_proposals, {}
 
 
 def make_relpn(cfg):

@@ -4,29 +4,20 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 
-from .model import RelationPredictor
+from .model import BaseModel
 from lib.modeling import *
 from lib.dataset.vrdataset import VRDataset
 from lib.utils.serialize import load_checkpoint
 
 
-def predict(cfg, dataset, logger):
+def predict(cfg, basedata, logger):
     cfg.MODEL.PHASE = 'test'
-    batch_size = cfg.MODEL.TEST_BATCH_SIZE
-    num_workers = cfg.DATALOADER.TEST_NUM_WORKERS
+    batch_size = cfg.DATASET.TEST_BATCH_SIZE
+    num_workers = cfg.DATASET.TEST_NUM_WORKERS
     topk_per_pair = cfg.PREDICT.TOPK_PER_PAIR
     topk_per_seg = cfg.PREDICT.TOPK_PER_SEG
 
-    # load model
-    model = RelationPredictor(cfg)
-    checkpoint = torch.load(os.path.join(get_model_path(), cfg.ETC.MODEL_DUMP_FILE))
-    load_checkpoint(model, checkpoint['model'])
-    logger.info(f"=> checkpoint succesfully loaded")
-    logger.info(f"=> epoch: {checkpoint['epoch']}")
-    logger.info(f"=> average loss:{checkpoint['loss']:.4f}")
-    model.eval()
-
-    test_data = VRDataset(cfg, dataset, logger)
+    test_data = VRDataset(cfg, basedata, logger)
     data_loader = DataLoader(
         dataset=test_data,
         batch_size=batch_size,
@@ -35,11 +26,19 @@ def predict(cfg, dataset, logger):
         pin_memory=False
     )
 
-    path = os.path.join('vidvrd-baseline-output', 'preprocessed_data')
+    # load model
+    model = BaseModel(cfg)
+    checkpoint = torch.load(os.path.join(get_model_path(), cfg.ETC.MODEL_DUMP_FILE))
+    load_checkpoint(model, checkpoint['model'])
+    logger.info(f"=> checkpoint succesfully loaded")
+    logger.info(f"=> epoch: {checkpoint['epoch']}")
+    logger.info(f"=> average loss:{checkpoint['loss']:.4f}")
+    model.eval()
+
     logger.info('predicting short-term visual relation...')
     pbar = tqdm(total=len(data_loader))
-
     predictions = dict()
+
     with torch.no_grad():
         for batch_i, (index, pairs_per_seg, feats_per_seg, iou_per_seg, trackid_per_seg) \
             in enumerate(data_loader):
@@ -61,29 +60,29 @@ def predict(cfg, dataset, logger):
                 N(N-1): number of all possible relations per segment
 
                 pairs ( shape: N(N-1)x2 )
-                tensor([[[ 0,  1],
-                         [ 0,  2],
-                         [ 0,  3],
-                         ...
-                         [17, 14],
-                         [17, 15],
-                         [17, 16]]])
+                tensor([[ 0,  1],
+                        [ 0,  2],
+                        [ 0,  3],
+                        ...
+                        [17, 14],
+                        [17, 15],
+                        [17, 16]])
 
                 feats ( shape: N(N-1)x11070 )
-                tensor([[[8.2992e-08, 1.2913e-05, 4.4002e-08,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
-                         [8.2992e-08, 1.2913e-05, 4.4002e-08,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
-                         [8.2992e-08, 1.2913e-05, 4.4002e-08,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
-                         ...,
-                         [3.9329e-05, 1.3184e-04, 4.6081e-05,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
-                         [3.9329e-05, 1.3184e-04, 4.6081e-05,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
-                         [3.9329e-05, 1.3184e-04, 4.6081e-05,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00]]])
+                tensor([[8.2992e-08, 1.2913e-05, 4.4002e-08,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
+                        [8.2992e-08, 1.2913e-05, 4.4002e-08,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
+                        [8.2992e-08, 1.2913e-05, 4.4002e-08,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
+                        ...,
+                        [3.9329e-05, 1.3184e-04, 4.6081e-05,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
+                        [3.9329e-05, 1.3184e-04, 4.6081e-05,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00],
+                        [3.9329e-05, 1.3184e-04, 4.6081e-05,  ..., 0.0000e+00, 0.0000e+00, 0.0000e+00]])
 
                 iou ( shape: (N+GT)x(N+GT) )
-                tensor([[[1.0000, 0.0000, 0.1238, ..., 0.6484, 0.1181, 0.0000],
-                         [0.0000, 1.0000, 0.0000, ..., 0.0000, 0.0000, 0.7938],
-                         ...
-                         [0.1181, 0.0000, 0.7218, ..., 0.0382, 1.0000, 0.0000],
-                         [0.0000, 0.7938, 0.0000, ..., 0.0000, 0.0000, 1.0000]]])
+                tensor([[1.0000, 0.0000, 0.1238, ..., 0.6484, 0.1181, 0.0000],
+                        [0.0000, 1.0000, 0.0000, ..., 0.0000, 0.0000, 0.7938],
+                        ...
+                        [0.1181, 0.0000, 0.7218, ..., 0.0382, 1.0000, 0.0000],
+                        [0.0000, 0.7938, 0.0000, ..., 0.0000, 0.0000, 1.0000]])
 
                 trackid ( shape: (N+GT) / proposal: -1, GT: 0,1,2)
                 tensor([-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2])

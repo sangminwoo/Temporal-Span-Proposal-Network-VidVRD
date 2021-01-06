@@ -4,7 +4,7 @@ import glob
 from .dataset import Dataset
 
 
-class VidVRD(Dataset):
+class BaseVidVRD(Dataset):
     """
     VidVRD dataset introduced in ACM MM'17
     """
@@ -15,7 +15,7 @@ class VidVRD(Dataset):
         video_rpath: the root path of videos
         splits: a list of splits in the dataset to load
         """
-        super(VidVRD, self).__init__(anno_rpath, video_rpath, splits)
+        super(BaseVidVRD, self).__init__(anno_rpath, video_rpath, splits)
         print('VidVRD dataset loaded.')
 
     def _get_anno_files(self, split):
@@ -43,7 +43,7 @@ class VidVRD(Dataset):
 
 
 if __name__ == '__main__':
-    dataset = VidVRD('/home/t2_u1/data/vidvrd', '/home/t2_u1/data/vidvrd/videos', ['train', 'test'])
+    dataset = BaseVidVRD('/home/t2_u1/data/vidvrd', '/home/t2_u1/data/vidvrd/videos', ['train', 'test'])
     test_inds = dataset.get_index('test')
     print(dataset.get_relation_insts(test_inds[111]))
 
