@@ -17,8 +17,13 @@ class AverageMeter:
 		self.avg = self.sum / self.count
 
 
-def calculate_eta(one_batch_time, cur_epoch, max_epoch, cur_iter, max_iter):
+def calculate_eta_iter(one_batch_time, cur_iter, max_iter):
 	eta_in_iter = one_batch_time * (max_iter-cur_iter-1)
+	return eta_in_iter
+
+
+def calculate_eta_epoch(one_batch_time, cur_epoch, max_epoch, cur_iter, max_iter):
+	eta_in_iter = calculate_eta_iter(one_batch_time, cur_iter, max_iter)
 	eta_in_epoch = (one_batch_time * max_iter) * (max_epoch-cur_epoch-1) 
 	eta_seconds = eta_in_iter + eta_in_epoch
 	return eta_seconds

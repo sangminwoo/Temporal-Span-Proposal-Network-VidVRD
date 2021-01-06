@@ -42,9 +42,11 @@ class RelPN(nn.Module):
 		return pair_proposals, duration_proposals, relpn_losses
 
 	def _forward_test(self, pair_list, target_list):
-		pair_proposals, _ = self.pair_proposal_network(pair_list, target_list)
+		if self.use_ppn:
+			pair_proposals, _ = self.pair_proposal_network(pair_list, target_list)
 
-		duration_proposals, _ = self.duration_proposal_network(pair_list, target_list, pair_proposals)
+		if self.use_dpn:
+			duration_proposals, _ = self.duration_proposal_network(pair_list, target_list, pair_proposals)
 
 		return pair_proposals, duration_proposals, {}
 

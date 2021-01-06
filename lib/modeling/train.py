@@ -12,7 +12,7 @@ from torch.nn.parallel import DistributedDataParallel
 from lib.dataset.build import build_data_loader
 from lib.utils.metric_logger import MetricLogger
 from lib.utils.comm import synchronize, is_main_process
-from lib.utils.miscellaneous import AverageMeter, calculate_eta 
+from lib.utils.miscellaneous import AverageMeter, calculate_eta_iter 
 from lib.utils.logger import setup_logger, get_timestamp
 from lib.modeling import *
 from .model import BaseModel
@@ -33,7 +33,7 @@ def train(gpu, cfg, args, basedata):
     )
     # synchronize()
 
-    cfg.MODEL.PHASE = 'train'
+    phase = 'train'
     lr = cfg.SOLVER.LEARNING_RATE
     momentum = cfg.SOLVER.MOMENTUM
     weight_decay = cfg.SOLVER.WEIGHT_DECAY 
@@ -45,7 +45,7 @@ def train(gpu, cfg, args, basedata):
     data_loader = build_data_loader(
         cfg,
         basedata,
-        phase=cfg.MODEL.PHASE,
+        phase=phase,
         is_distributed=True,
         start_iter=0
     )
@@ -84,7 +84,7 @@ def train(gpu, cfg, args, basedata):
             end = time.time()
             meters.update(time=batch_time, data=data_time)
             
-            eta_seconds = calculate_eta(meters.time.global_avg, iteration, max_iter, iteration, len(data_loader))
+            eta_seconds = calculate_eta_iter(meters.time.global_avg, iteration, max_iter)
             eta_string = str(timedelta(seconds=int(eta_seconds)))
 
             if iteration % display_freq == 0 and is_main_process():

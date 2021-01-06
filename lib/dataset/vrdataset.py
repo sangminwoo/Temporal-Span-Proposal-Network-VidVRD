@@ -14,13 +14,12 @@ from lib.utils.miscellaneous import normalize, to_multi_onehot
 from lib.modeling import *
 
 class VRDataset(Dataset):
-	def __init__(self, cfg, dataset):
+	def __init__(self, cfg, dataset, phase):
 		self.num_predicates = cfg.PREDICT.PREDICATE_NUM
-		self.phase = cfg.MODEL.PHASE
+		self.phase = phase
 		self.logit_only = cfg.DATASET.LOGIT_ONLY
 		self.use_gt_obj_trajs = cfg.DATASET.USE_GT_OBJ_TRAJS
-		print('preparing video segments for {}...'.format(self.phase))
-
+		
 		video_indices = dataset.get_index(split=self.phase)
 		if self.phase == 'train':
 			self.trajs = dict()
@@ -66,7 +65,6 @@ class VRDataset(Dataset):
 		else:
 			raise ValueError('Unknown phase: {}'.format(self.phase))
 
-		print('Total {} videos segments for {}'.format(len(self), self.phase))
 
 	def __len__(self):
 		return len(self.index)

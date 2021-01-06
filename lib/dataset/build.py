@@ -55,7 +55,11 @@ def make_batch_data_sampler(
 
 def build_data_loader(cfg, basedata, phase, is_distributed=False, start_iter=0):
     num_gpus = get_world_size()
-    dataset = VRDataset(cfg, dataset=basedata)
+
+    print('preparing video segments for {}...'.format(phase))
+    dataset = VRDataset(cfg, dataset=basedata, phase=phase)
+    print('Total {} videos segments for {}'.format(len(dataset), phase))
+    
     sampler = make_data_sampler(
         dataset,
         shuffle=True if phase in ["train", "val"] else False,

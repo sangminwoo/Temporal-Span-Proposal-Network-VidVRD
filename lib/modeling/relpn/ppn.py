@@ -70,6 +70,9 @@ class PPN(nn.Module):
         loss_ppn = {
             "loss_pair": loss_pair_proposal,
         }
+
+        # feats = torch.stack([feats[i][pair_proposals[i]] for i in range(len(feats))])
+        # targets = torch.stack([targets[i][pair_proposals[i]] for i in range(len(targets))])
         
         return pair_proposals, loss_ppn
 
@@ -82,7 +85,7 @@ class PPN(nn.Module):
             sampled_pair_ind = order[:self.num_pair_proposals]
             pair_proposals.append(sampled_pair_ind)
 
-        feats = torch.stack([feats[i][pair_proposals[i]] for i in range(len(feats))])
+        # feats = torch.stack([feats[i][pair_proposals[i]] for i in range(len(feats))])
 
         return pair_proposals, {}
 

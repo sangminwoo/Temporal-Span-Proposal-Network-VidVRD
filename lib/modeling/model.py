@@ -7,6 +7,9 @@ from lib.modeling.relpn import make_relpn
 class BaseModel(nn.Module):
 	def __init__(self, cfg):
 		super(BaseModel, self).__init__()
+		self.use_ppn = cfg.RELPN.USE_PPN
+		self.use_dpn = cfg.RELPN.USE_DPN
+
 		self.relpn = make_relpn(cfg)
 		self.rel_of_interest_pool = RelOIPool()
 		self.classifier = RelationPredictor(
@@ -28,13 +31,15 @@ class BaseModel(nn.Module):
 
 	def _forward_train(self, pair_list, target_list):
 		loss_dict = {}
-		pair_proposals, duration_proposals, relpn_losses = self.relpn(pair_list, target_list)
-		loss_dict.update(relpn_losses)
-
+		pair_proposals = None
+		duration_proposals = None
+		
 		feats = [plist.features for plist in pair_list]
 		targets = [tlist.target for tlist in target_list]
-		# feats = torch.stack([feats[i][pair_proposals[i]] for i in range(len(feats))])
-		# targets = torch.stack([targets[i][pair_proposals[i]] for i in range(len(targets))])
+
+		if self.use_ppn or self.use_dpn:
+			pair_proposals, duration_proposals, relpn_losses = self.relpn(pair_list, target_list)
+			loss_dict.update(relpn_losses)
 
 		# relation of interest pooling
 		reloi_feats = self.rel_of_interest_pool(feats, duration_proposals)
