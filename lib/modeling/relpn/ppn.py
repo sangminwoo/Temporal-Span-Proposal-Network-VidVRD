@@ -61,9 +61,9 @@ class PPN(nn.Module):
         pair_proposals = []
         loss_pair_proposal = 0
         for seg_idx, (pair_matrix, gt_matrix) in enumerate(zip(pair_matrices, gt_matrices)):
-            loss_pair_proposal += F.binary_cross_entropy_with_logits(pair_matrix, gt_matrix.to(pair_matrix.device))
+            loss_pair_proposal += F.binary_cross_entropy(pair_matrix, gt_matrix.to(pair_matrix.device))
 
-            pair_score_sorted, order = torch.sort(pair_matrix.view(-1), descending=True)
+            pair_matrix_sorted, order = torch.sort(pair_matrix.view(-1), descending=True)
             sampled_pair_ind = order[:self.num_pair_proposals]
             pair_proposals.append(sampled_pair_ind)
 
@@ -81,7 +81,7 @@ class PPN(nn.Module):
 
         pair_proposals = []
         for seg_idx, pair_matrix in enumerate(pair_matrices):
-            pair_score_sorted, order = torch.sort(pair_matrix.view(-1), descending=True)
+            pair_matrix_sorted, order = torch.sort(pair_matrix.view(-1), descending=True)
             sampled_pair_ind = order[:self.num_pair_proposals]
             pair_proposals.append(sampled_pair_ind)
 
@@ -107,8 +107,9 @@ class PPNHead(nn.Module):
     def forward(self, sub_logits, obj_logits):
         sub_emb = self.sub_emb(sub_logits)
         obj_emb = self.obj_emb(obj_logits)
-        pair_score = torch.mm(sub_emb, obj_emb.t())
-        return pair_score
+        pair_matrix = torch.mm(sub_emb, obj_emb.t())
+        pair_matrix = torch.sigmoid(pair_matrix)
+        return pair_matrix
 
 
 def make_ppn(cfg):

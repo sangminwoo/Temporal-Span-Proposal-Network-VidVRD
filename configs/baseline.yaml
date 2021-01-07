@@ -2,7 +2,11 @@ MODEL:
   NAME: "baseline"
 SOLVER:
   MAX_ITER: 2000
-  LEARNING_RATE: 1e-2
+  BASE_LR: 1e-2
+  OPTIMIZER:
+    TYPE: "adam"
+  SCHEDULER:
+    TYPE: "warmup_multi"
 DATASET:
   TRAIN_BATCH_SIZE: 1
   TEST_BATCH_SIZE: 1

@@ -1,0 +1,99 @@
+!!python/object/new:yacs.config.CfgNode
+dictitems:
+  DATASET: !!python/object/new:yacs.config.CfgNode
+    dictitems:
+      LOGIT_ONLY: true
+      TEST_BATCH_SIZE: 1
+      TEST_NUM_WORKERS: 4
+      TRAIN_BATCH_SIZE: 1
+      TRAIN_NUM_WORKERS: 0
+      USE_GT_OBJ_TRAJS: false
+    state:
+      __deprecated_keys__: !!set {}
+      __immutable__: false
+      __new_allowed__: false
+      __renamed_keys__: {}
+  ETC: !!python/object/new:yacs.config.CfgNode
+    dictitems:
+      DISPLAY_FREQ: 1
+      MODEL_DUMP_FILE: baseline_weights_iter_2000.pt
+      RANDOM_SEED: 0
+      SAVE_FREQ: 1000
+    state:
+      __deprecated_keys__: !!set {}
+      __immutable__: false
+      __new_allowed__: false
+      __renamed_keys__: {}
+  MODEL: !!python/object/new:yacs.config.CfgNode
+    dictitems:
+      NAME: baseline
+    state:
+      __deprecated_keys__: !!set {}
+      __immutable__: false
+      __new_allowed__: false
+      __renamed_keys__: {}
+  PREDICT: !!python/object/new:yacs.config.CfgNode
+    dictitems:
+      FEATURE_DIM: 11070
+      OBJECT_NUM: 35
+      PREDICATE_NUM: 132
+      TOPK_PER_PAIR: 20
+      TOPK_PER_SEG: 200
+    state:
+      __deprecated_keys__: !!set {}
+      __immutable__: false
+      __new_allowed__: false
+      __renamed_keys__: {}
+  RELPN: !!python/object/new:yacs.config.CfgNode
+    dictitems:
+      DPN: !!python/object/new:yacs.config.CfgNode
+        dictitems:
+          ANCHOR_SIZES: 35
+          ANCHOR_STRIDE: 132
+          DPN_ONLY: false
+          IN_CHANNELS: 1024
+          NUM_ANCHORS_PER_LOCATION: 4
+          NUM_DURATION_PROPOSALS: 64
+        state:
+          __deprecated_keys__: !!set {}
+          __immutable__: false
+          __new_allowed__: false
+          __renamed_keys__: {}
+      OBJECT_DIM: 1024
+      PPN: !!python/object/new:yacs.config.CfgNode
+        dictitems:
+          BATCH_SIZE_PER_SEGMENT: 256
+          HIDDEN_CHANNELS: 64
+          IN_CHANNELS: 35
+          NUM_PAIR_PROPOSALS: 256
+          OUT_CHANNELS: 35
+          POSITIVE_FRACTION: 0.25
+        state:
+          __deprecated_keys__: !!set {}
+          __immutable__: false
+          __new_allowed__: false
+          __renamed_keys__: {}
+      USE_DPN: false
+      USE_PPN: false
+    state:
+      __deprecated_keys__: !!set {}
+      __immutable__: false
+      __new_allowed__: false
+      __renamed_keys__: {}
+  SOLVER: !!python/object/new:yacs.config.CfgNode
+    dictitems:
+      EPSILON: 1.0e-08
+      LEARNING_RATE: 0.01
+      MAX_ITER: 2000
+      MOMENTUM: 0.9
+      WEIGHT_DECAY: 0.0005
+    state:
+      __deprecated_keys__: !!set {}
+      __immutable__: false
+      __new_allowed__: false
+      __renamed_keys__: {}
+state:
+  __deprecated_keys__: !!set {}
+  __immutable__: false
+  __new_allowed__: false
+  __renamed_keys__: {}

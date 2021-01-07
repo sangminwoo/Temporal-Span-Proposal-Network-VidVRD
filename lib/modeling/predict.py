@@ -1,6 +1,6 @@
 import os
 from tqdm import tqdm
-
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -51,12 +51,15 @@ def predict(cfg, basedata, logger):
             #     f"There is no object tracklet proposals in {index}"
             pair_proposals, duration_proposals, rel_logits = model(pair_list, _)
             
-            for index, rel_logit, tracklet_pair, track_cls_logit, num_tracklet, iou, trackid in \
-                zip(indexs, rel_logits, tracklet_pairs, track_cls_logits, num_tracklets, ious, trackids):
+            for index, rel_logit, feature, tracklet_pair, track_cls_logit, num_tracklet, iou, trackid in \
+                zip(indexs, rel_logits, features, tracklet_pairs, track_cls_logits, num_tracklets, ious, trackids):
                 if num_tracklet <= 1:
                     logger.info(f'No relation exists in video segment {index}')
                     pbar.update(1)
                     continue
+
+                sub_logit = feature[:, :35]
+                obj_logit = feature[:, 35:70]
 
                 # pick top-20 predictions per pair
                 topk_pred_per_pair = torch.sort(rel_logit, descending=True, dim=-1) 
@@ -77,8 +80,11 @@ def predict(cfg, basedata, logger):
                 top_pair_tid = tracklet_pair[top_pair_idx] # top-K x 2
 
                 # get object labels
-                top_sub_logit = track_cls_logit[top_pair_tid[:, 0]] # top-K x 35 
-                top_obj_logit = track_cls_logit[top_pair_tid[:, 1]] # top-K x 35
+                top_sub_logit = sub_logit[top_pair_tid[:, 0]] # top-K x 35 
+                top_obj_logit = obj_logit[top_pair_tid[:, 1]] # top-K x 35 
+
+                # top_sub_logit = track_cls_logit[top_pair_tid[:, 0]] # top-K x 35 
+                # top_obj_logit = track_cls_logit[top_pair_tid[:, 1]] # top-K x 35
 
                 top_sub_label = torch.argmax(top_sub_logit, dim=1) # top-K
                 top_obj_label = torch.argmax(top_obj_logit, dim=1) # top-K
@@ -98,14 +104,14 @@ def predict(cfg, basedata, logger):
                 ) # top-K in R
                 
                 predictions = [
-                    (score, triplet, pair_tid) for score, triplet, pair_tid \
-                        in zip(top_rel_score, top_triplet_label, top_pair_tid)
+                    (np.array(score), np.array(triplet), np.array(pair_tid))
+                    for score, triplet, pair_tid in zip(top_rel_score, top_triplet_label, top_pair_tid)
                 ]
 
                 short_term_relations[index] = (
                     predictions,
-                    iou,
-                    trackid
+                    np.array(iou),
+                    np.array(trackid)
                 )
                 # from pprint import pprint; pprint(short_term_relations)
                 # raise ValueError

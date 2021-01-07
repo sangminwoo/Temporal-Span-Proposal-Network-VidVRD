@@ -2,8 +2,8 @@ import json
 import argparse
 import os
 
-from dataset import VidVRD, VidOR
-from evaluation import eval_video_object, eval_action, eval_visual_relation
+from lib.dataset import BaseVidVRD, BaseVidOR
+from lib.evaluation import eval_video_object, eval_action, eval_visual_relation
 from IPython import embed
 
 
@@ -67,15 +67,15 @@ if __name__ == '__main__':
     if args.dataset=='vidvrd':
         if args.task=='relation':
             # load train set for zero-shot evaluation
-            dataset = VidVRD(os.path.join(args.data_dir, 'vidvrd'), os.path.join(args.data_dir, 'vidvrd/videos'), ['train', args.split])
+            dataset = BaseVidVRD(os.path.join(args.data_dir, 'vidvrd'), os.path.join(args.data_dir, 'vidvrd/videos'), ['train', args.split])
         else:
-            dataset = VidVRD(os.path.join(args.data_dir, 'vidvrd'), os.path.join(args.data_dir, 'vidvrd/videos'), [args.split])
+            dataset = BaseVidVRD(os.path.join(args.data_dir, 'vidvrd'), os.path.join(args.data_dir, 'vidvrd/videos'), [args.split])
     elif args.dataset=='vidor':
         if args.task=='relation':
             # load train set for zero-shot evaluation
-            dataset = VidOR(os.path.join(args.data_dir, 'vidor/annotation'), os.path.join(args.data_dir, 'vidor/videos'), ['training', args.split], low_memory=True)
+            dataset = BaseVidOR(os.path.join(args.data_dir, 'vidor/annotation'), os.path.join(args.data_dir, 'vidor/videos'), ['training', args.split], low_memory=True)
         else:
-            dataset = VidOR(os.path.join(args.data_dir, 'vidor/annotation'), os.path.join(args.data_dir, 'vidor/videos'), [args.split], low_memory=True)
+            dataset = BaseVidOR(os.path.join(args.data_dir, 'vidor/annotation'), os.path.join(args.data_dir, 'vidor/videos'), [args.split], low_memory=True)
     else:
         raise Exception('Unknown dataset {}'.format(args.dataset))
 

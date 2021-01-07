@@ -11,6 +11,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from lib.dataset.build import build_data_loader
+from lib.solver.build import build_optimizer_scheduler
 from lib.utils.metric_logger import MetricLogger
 from lib.utils.comm import synchronize, is_main_process
 from lib.utils.miscellaneous import AverageMeter, calculate_eta_iter 
@@ -35,13 +36,16 @@ def train(gpu, cfg, args, basedata):
     # synchronize()
 
     phase = 'train'
-    lr = cfg.SOLVER.LEARNING_RATE
-    momentum = cfg.SOLVER.MOMENTUM
-    weight_decay = cfg.SOLVER.WEIGHT_DECAY 
     display_freq = cfg.ETC.DISPLAY_FREQ
     save_freq = cfg.ETC.SAVE_FREQ
     model_dump_file = cfg.ETC.MODEL_DUMP_FILE
     model_name = cfg.MODEL.NAME
+
+    model = BaseModel(cfg)
+    torch.cuda.set_device(gpu)
+    model = model.cuda(gpu)
+    model = DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
+    model.train()
 
     data_loader = build_data_loader(
         cfg,
@@ -51,14 +55,14 @@ def train(gpu, cfg, args, basedata):
         start_iter=0
     )
 
-    model = BaseModel(cfg)
-    torch.cuda.set_device(gpu)
-    model = model.cuda(gpu)
-    model = DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
-    model.train()
+    optimizer, scheduler = build_optimizer_scheduler(
+        cfg,
+        model
+    )
 
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=lr, weight_decay=weight_decay)
+    # optimizer = torch.optim.Adam(params=model.parameters(), lr=lr, weight_decay=weight_decay)
     # optimizer = torch.optim.SGD(params=model.parameters(), momentum=momentum, lr=lr, weight_decay=weight_decay)
+    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
 
     max_iter = len(data_loader)
     meters = MetricLogger(delimiter="  ")
@@ -75,6 +79,7 @@ def train(gpu, cfg, args, basedata):
             losses = sum(loss for loss in loss_dict.values())
             losses.backward()
             optimizer.step()
+            scheduler.step()
 
             # reduce losses over all GPUs for logging purposes
             loss_dict_reduced = loss_dict
@@ -94,6 +99,7 @@ def train(gpu, cfg, args, basedata):
                         [
                         '[{iter}/{max_iter}]',
                         '{meters}',
+                        'lr: {lr:.6f}',
                         'eta: {eta}',
                         'max mem: {memory:.0f}',
                         ]
@@ -101,6 +107,7 @@ def train(gpu, cfg, args, basedata):
                         iter=iteration+1,
                         max_iter=max_iter,
                         meters=str(meters),
+                        lr=optimizer.param_groups[0]['lr'],
                         eta=eta_string,
                         memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                     )

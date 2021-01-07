@@ -42,7 +42,7 @@ class BaseModel(nn.Module):
 		loss_relation = 0
 		for reloi_feat, target in zip(reloi_feats, targets):
 			rel_logit = self.classifier(reloi_feat) # batch x pair_per_seg x 11070
-			loss_relation += F.binary_cross_entropy_with_logits(rel_logit, target)
+			loss_relation += F.binary_cross_entropy(rel_logit, target)
 
 		loss_rel = {
 			"loss_rel": loss_relation
@@ -84,4 +84,5 @@ class RelationPredictor(nn.Module):
 
 	def forward(self, reloi_feats):
 		rel_logit = self.rel_predictor(reloi_feats)
+		rel_logit = torch.sigmoid(rel_logit)
 		return rel_logit

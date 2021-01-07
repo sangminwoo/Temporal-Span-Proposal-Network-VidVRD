@@ -154,7 +154,7 @@ def greedy_relational_association(dataset, short_term_relations, max_traj_num_in
                 last_modify_rel_list.sort(key=lambda r: r.mean_confs(), reverse=True)
                 is_merged = False
                 for r in last_modify_rel_list:
-                    if pred[1] == r.triplet():
+                    if (pred[1] == r.triplet()).all():
                         if (straj.pstart < r.fend and otraj.pstart < r.fend) \
                                 and r.both_overlap(straj,otraj):
                             r.extend(straj, otraj, conf_score)
