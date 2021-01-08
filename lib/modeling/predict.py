@@ -18,15 +18,6 @@ def predict(cfg, basedata, logger):
     topk_per_pair = cfg.PREDICT.TOPK_PER_PAIR
     topk_per_seg = cfg.PREDICT.TOPK_PER_SEG
 
-    data_loader = build_data_loader(
-        cfg,
-        basedata,
-        phase=phase,
-        is_distributed=False,
-        start_iter=0
-    )
-
-    # load model
     model = BaseModel(cfg)
     checkpoint = torch.load(os.path.join(get_model_path(), cfg.ETC.MODEL_DUMP_FILE))
     load_checkpoint(model, checkpoint['model'])
@@ -35,20 +26,34 @@ def predict(cfg, basedata, logger):
     logger.info(f"=> average loss:{checkpoint['loss']:.4f}")
     model.eval()
 
+    data_loader = build_data_loader(
+        cfg,
+        basedata,
+        phase=phase,
+        is_distributed=False,
+        start_iter=0
+    )
+
     logger.info('predicting short-term visual relation...')
     pbar = tqdm(total=len(data_loader))
     short_term_relations = dict()
 
     with torch.no_grad():
         for iteration, (pair_list, _, indexs) in enumerate(data_loader):
-            features = [plist.features for plist in pair_list]
-            tracklet_pairs = [plist.get_field('tracklet_pairs') for plist in pair_list]
-            track_cls_logits = [plist.get_field('track_cls_logits') for plist in pair_list]
-            num_tracklets = [plist.get_field('num_tracklets') for plist in pair_list]
-            ious = [plist.get_field('ious') for plist in pair_list]
-            trackids = [plist.get_field('track_ids') for plist in pair_list]
-            # assert len(pairs) > 0, \
-            #     f"There is no object tracklet proposals in {index}"
+            features = []
+            tracklet_pairs = []
+            track_cls_logits = []
+            num_tracklets = []
+            ious = []
+            trackids = []
+            for plist in pair_list:
+                features.append(plist.features)
+                tracklet_pairs.append(plist.get_field('tracklet_pairs'))
+                track_cls_logits.append(plist.get_field('track_cls_logits'))
+                num_tracklets.append(plist.get_field('num_tracklets'))
+                ious.append(plist.get_field('ious'))
+                trackids.append(plist.get_field('track_ids'))
+                
             pair_proposals, duration_proposals, rel_logits = model(pair_list, _)
             
             for index, rel_logit, feature, tracklet_pair, track_cls_logit, num_tracklet, iou, trackid in \
@@ -80,11 +85,8 @@ def predict(cfg, basedata, logger):
                 top_pair_tid = tracklet_pair[top_pair_idx] # top-K x 2
 
                 # get object labels
-                top_sub_logit = sub_logit[top_pair_tid[:, 0]] # top-K x 35 
-                top_obj_logit = obj_logit[top_pair_tid[:, 1]] # top-K x 35 
-
-                # top_sub_logit = track_cls_logit[top_pair_tid[:, 0]] # top-K x 35 
-                # top_obj_logit = track_cls_logit[top_pair_tid[:, 1]] # top-K x 35
+                top_sub_logit = sub_logit[(num_tracklet-1)*top_pair_tid[:, 0]] # top-K x 35 
+                top_obj_logit = obj_logit[(num_tracklet-1)*top_pair_tid[:, 1]] # top-K x 35 
 
                 top_sub_label = torch.argmax(top_sub_logit, dim=1) # top-K
                 top_obj_label = torch.argmax(top_obj_logit, dim=1) # top-K

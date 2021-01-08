@@ -60,10 +60,6 @@ def train(gpu, cfg, args, basedata):
         model
     )
 
-    # optimizer = torch.optim.Adam(params=model.parameters(), lr=lr, weight_decay=weight_decay)
-    # optimizer = torch.optim.SGD(params=model.parameters(), momentum=momentum, lr=lr, weight_decay=weight_decay)
-    # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
-
     max_iter = len(data_loader)
     meters = MetricLogger(delimiter="  ")
     end = time.time()

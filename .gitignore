@@ -2,16 +2,20 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.pth
-train_set_prooposals.json
-test_set_proposals.json
-videovrd_tracklets.json
+
 *.hdf5
 *.npy
 *.pt
 *.pth
+
+detectron/
+detectron2/
 logs/
 vidvrd-baseline-output/
+
+train_set_prooposals.json
+test_set_proposals.json
+videovrd_tracklets.json
 
 # C extensions
 *.so

@@ -118,19 +118,23 @@ def greedy_relational_association(dataset, short_term_relations, max_traj_num_in
     short_term_relations.sort(key=lambda x: int(x[0][1]))
     video_relation_list = []
     last_modify_rel_list = []
+    
     for i, (index, prediction) in enumerate(short_term_relations):
         vid, fstart, fend = index
+
         # load prediction data
         pred_list, iou, trackid = prediction
         sorted_pred_list = sorted(pred_list, key=lambda x: x[0], reverse=True)
         if len(sorted_pred_list) > max_traj_num_in_clip:
             sorted_pred_list = sorted_pred_list[0:max_traj_num_in_clip]
+
         # load predict trajectory data
         trajs = object_trajectory_proposal(dataset, vid, fstart, fend)
         for traj in trajs:
             traj.pstart = fstart
             traj.pend = fend
             traj.vsig = get_segment_signature(vid, fstart, fend)
+
         # merge
         started_at = time.time()
         cur_modify_rel_list = []

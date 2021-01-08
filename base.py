@@ -42,7 +42,20 @@ def preprocessing(cfg, args, data_dir):
 
 
 def training(cfg, args, data_dir):
-    basedata = BaseVidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
+    if args.dataset == 'vidvrd':
+        basedata = BaseVidVRD(
+            data_dir,
+            os.path.join(data_dir, 'videos'),
+            ['train', 'test']
+        )
+    elif args.dataset == 'vidor':
+        basedata = BaseVidOR(
+            os.path.join(data_dir, 'annotation'),
+            os.path.join(data_dir, 'videos'),
+            ['train', 'test']
+        )
+    else:
+        raise ValueError(f"No dataset named {args.dataset}")
 
     # distributed
     args.world_size = args.ngpus_per_node * args.nodes
@@ -53,7 +66,20 @@ def training(cfg, args, data_dir):
 
 
 def detect(cfg, args, data_dir):
-    basedata = BaseVidVRD(data_dir, os.path.join(data_dir, 'videos'), ['train', 'test'])
+    if args.dataset == 'vidvrd':
+        basedata = BaseVidVRD(
+            data_dir,
+            os.path.join(data_dir, 'videos'),
+            ['train', 'test']
+        )
+    elif args.dataset == 'vidor':
+        basedata = BaseVidOR(
+            os.path.join(data_dir, 'annotation'),
+            os.path.join(data_dir, 'videos'),
+            ['train', 'test']
+        )
+    else:
+        raise ValueError(f"No dataset named {args.dataset}")
 
     logger = setup_logger(name='detect', save_dir='logs', distributed_rank=0, filename=f'{get_timestamp()}_detect.txt')
     logger = logging.getLogger('detect')

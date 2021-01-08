@@ -1,6 +1,6 @@
 data_dir=/home/t2_u1/data
 dataset=vidvrd
-split=train # test
+split=test
 task=relation # object, action, relation
 prediction=./vidvrd-baseline-output/models/baseline_relation_prediction.json
 
