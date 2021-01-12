@@ -13,7 +13,8 @@ setup_logger()
 # register_coco_instances("my_dataset_train", {}, "json_annotation_train.json", "path/to/image/dir")
 # register_coco_instances("my_dataset_val", {}, "json_annotation_val.json", "path/to/image/dir")
 
-obj_to_idx = {
+# vidvrd
+vidvrd_obj_to_idx = {
 	'airplane': 0, 'antelope': 1, 'ball': 2, 'bear': 3, 'bicycle': 4,
 	'bird': 5, 'bus': 6, 'car': 7, 'cattle': 8, 'dog': 9,
 	'domestic_cat': 10, 'elephant': 11, 'fox': 12, 'frisbee': 13, 'giant_panda': 14,
@@ -23,12 +24,11 @@ obj_to_idx = {
 	'train': 30, 'turtle': 31, 'watercraft': 32, 'whale': 33, 'zebra': 34
 }
 
-def to_coco_format(anno_dir, split):
+def vidor_to_coco_format(anno_dir, split):
 	dataset_dicts = []
-	for root, dirs, files in os.walk(os.path.join(anno_dir, split)):
-		assert len(files) > 0, "annotation files must be exist!"
-		for video_idx, file_name in enumerate(files):
-			with open(os.path.join(root, file_name)) as f:
+	for dirs in os.listdir(os.path.join(anno_dir, 'annotation', split)):
+		for files in os.listdir(os.path.join(anno_dir, 'annotation', split, dirs)):
+			with open(os.path.join(anno_dir, 'annotation', split, dirs, files)) as f:
 				anno = json.load(f)
 
 			tid_to_obj = {
@@ -52,7 +52,7 @@ def to_coco_format(anno_dir, split):
 								 bbox['bbox']['xmax'],
 								 bbox['bbox']['ymax']],
 						'bbox_mode': BoxMode.XYXY_ABS,
-						'category_id': obj_to_idx[tid_to_obj[bbox['tid']]]
+						'category_id': vidor_obj_to_idx[tid_to_obj[bbox['tid']]]
 					}
 					objs.append(obj)
 
@@ -62,27 +62,30 @@ def to_coco_format(anno_dir, split):
 	return dataset_dicts
 
 if __name__=='__main__':
+	# vidvrd_to_coco_format
 	anno_dir = "/home/t2_u1/data/vidvrd/"
 	for d in ["train", "test"]:
-	    DatasetCatalog.register("vidvrd_" + d, lambda d=d: to_coco_format(anno_dir, d))
-	    MetadataCatalog.get("vidvrd_" + d).set(
-	    	thing_classes=[
-	    	'airplane', 'antelope', 'ball', 'bear', 'bicycle',
-	    	'bird', 'bus', 'car', 'cattle', 'dog',
-	    	'domestic_cat', 'elephant', 'fox', 'frisbee', 'giant_panda',
-	    	'hamster', 'horse', 'lion', 'lizard', 'monkey',
-	    	'motorcycle', 'person', 'rabbit', 'red_panda', 'sheep',
-	    	'skateboard', 'snake', 'sofa', 'squirrel', 'tiger',
-	    	'train', 'turtle', 'watercraft', 'whale', 'zebra']
-	    )
-	# vidvrd_metadata = MetadataCatalog.get("vidvrd_train")
-	vidvrd_metadata = MetadataCatalog.get("vidvrd_test")
+		DatasetCatalog.register("vidvrd_" + d, lambda d=d:vidvrd_to_coco_format(anno_dir, d))
+		MetadataCatalog.get("vidvrd_" + d).set(
+			thing_classes=[
+				'airplane', 'antelope', 'ball', 'bear', 'bicycle',
+				'bird', 'bus', 'car', 'cattle', 'dog',
+				'domestic_cat', 'elephant', 'fox', 'frisbee', 'giant_panda',
+				'hamster', 'horse', 'lion', 'lizard', 'monkey',
+				'motorcycle', 'person', 'rabbit', 'red_panda', 'sheep',
+				'skateboard', 'snake', 'sofa', 'squirrel', 'tiger',
+				'train', 'turtle', 'watercraft', 'whale', 'zebra'
+			]
+		)
+	vidvrd_metadata = MetadataCatalog.get("vidvrd_train")
+	dataset_dicts = vidvrd_to_coco_format(anno_dir, "train")
+	with open("./vidvrd_coco_format.json", "w") as f:
+		j = json.dump(dataset_dicts, f)
 
-	# dataset_dicts = to_coco_format(anno_dir, "train")
-	dataset_dicts = to_coco_format(anno_dir, "test")
-	for d in random.sample(dataset_dicts, 3):
-		print(d)
-		print(d["file_name"])
+	with open("./vidvrd_coco_format.json", "r") as f:
+		dataset_dicts = json.load(f)
+	num_images_to_show = 3
+	for d in random.sample(dataset_dicts, num_images_to_show):
 		img = cv2.imread(d["file_name"])
 		visualizer = Visualizer(img[:, :, ::-1], metadata=vidvrd_metadata, scale=0.5)
 		out = visualizer.draw_dataset_dict(d)
