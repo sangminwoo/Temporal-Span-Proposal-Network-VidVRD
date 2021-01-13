@@ -1,14 +1,22 @@
-# End-to-End Video Relation Detection with Relation Proposal Network
+# Temporal Span Proposal Network for Video Relation Detection
+
+## Video Visual Realtion Detection (VidVRD) & Video Object Relation (VidOR)
+- [x] VidVRD / VidOR Dataset
+- [x] Preprocessing script
+- [] Object Detection w/ Faster R-CNN
+- [] Multi Object Tracking w/ DeepSORT
+- [] Relation Detection Baseline
 
 ### Dataset
-VidVRD dataset can be found in [here](https://xdshang.github.io/docs/imagenet-vidvrd.html).
+* VidVRD dataset can be found in [here](https://xdshang.github.io/docs/imagenet-vidvrd.html).
+* VidOR dataset can be found in [here](https://xdshang.github.io/docs/vidor.html).
 
-### Preprocessing
-use `vidvrd_to_image.sh`
-will took about 7-8 hours.
+### Preprocessing videos into frames
+* As for VidVRD, use `vidvrd_to_image.sh` (will took about 1 hour).
+* As for VidOR, use `vidor_to_image.sh` (will took about 7-8 hours).
 
-### Annotations structure
-The json file contains a dictionary sturctured like:
+### Annotation format
+The VidVRD json file contains a dictionary sturctured like:
 ```
 {
     "video_id": "ILSVRC2015_train_00010001",        # Video ID from the original ImageNet ILSVRC2016 video dataset
@@ -53,17 +61,7 @@ The json file contains a dictionary sturctured like:
 }
 ```
 
-## Video Object Relation (VidOR)
-
-### Dataset
-VidOR dataset can be found in [here](https://xdshang.github.io/docs/vidor.html).
-
-### Preprocessing
-use `vidor_to_image.sh`
-will took about 1 hour.
-
-### Annotations structure
-The json file contains a dictionary sturctured like:
+The VidOR json file contains a dictionary sturctured like (both are identical except the "version", "video_hash", and "video_path"):
 ```
 {
     "version": "VERSION 1.0",
@@ -111,3 +109,33 @@ The json file contains a dictionary sturctured like:
     ]
 }
 ```
+
+### Object Detector
+We use off-the-shelf [Faster R-CNN](https://github.com/facebookresearch/detectron2/) equipped with ResNet-101 backbone.
+
+* VidVRD/VidOR to COCO format
+    - As for VidVRD, use `vidvrd_anno_to_coco_format.py` (will took a minute).
+    - As for VidOR, use `vidor_anno_to_coco_format.py` (will took few minutes).
+
+### Multi Object Tracker
+We use [DeepSORT](https://github.com/nwojke/deep_sort) for multi-object tracking.
+
+### Relation Detection & Relation Tagging
+
+* Train
+```
+sh train.sh
+````
+
+* Evaluation
+
+```
+sh eval.sh
+```
+
+## Citation
+TODO
+
+## Acknowledgement
+
+We appreciate much the nicely organized codes developed by [VidVRD-helper](https://github.com/xdshang/VidVRD-helper), [detectron2](https://github.com/facebookresearch/detectron2/), and [DeepSORT](https://github.com/nwojke/deep_sort). Our codebase is built mostly based on them.
