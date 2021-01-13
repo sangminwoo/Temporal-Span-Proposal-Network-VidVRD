@@ -24,17 +24,18 @@ vidvrd_obj_to_idx = {
 	'train': 30, 'turtle': 31, 'watercraft': 32, 'whale': 33, 'zebra': 34
 }
 
-def vidor_to_coco_format(anno_dir, split):
+def vidvrd_to_coco_format(anno_dir, split):
 	dataset_dicts = []
-	for dirs in os.listdir(os.path.join(anno_dir, 'annotation', split)):
-		for files in os.listdir(os.path.join(anno_dir, 'annotation', split, dirs)):
-			with open(os.path.join(anno_dir, 'annotation', split, dirs, files)) as f:
+	for root, dirs, files in os.walk(os.path.join(anno_dir, split)):
+		assert len(files) > 0, "annotation files must be exist!"
+		for video_idx, file_name in enumerate(files):
+			with open(os.path.join(root, file_name)) as f:
 				anno = json.load(f)
 
 			tid_to_obj = {
 				obj_tid['tid']:obj_tid['category'] for obj_tid in anno['subject/objects']
 			}
-			  
+
 			record = {}
 			record['height'] = anno['height']
 			record['width'] = anno['width']
@@ -52,7 +53,7 @@ def vidor_to_coco_format(anno_dir, split):
 								 bbox['bbox']['xmax'],
 								 bbox['bbox']['ymax']],
 						'bbox_mode': BoxMode.XYXY_ABS,
-						'category_id': vidor_obj_to_idx[tid_to_obj[bbox['tid']]]
+						'category_id': obj_to_idx[tid_to_obj[bbox['tid']]]
 					}
 					objs.append(obj)
 
