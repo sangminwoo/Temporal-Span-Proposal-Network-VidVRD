@@ -1,19 +1,20 @@
 # Temporal Span Proposal Network for Video Relation Detection
 
 ## Video Visual Realtion Detection (VidVRD) & Video Object Relation (VidOR)
-- [x] VidVRD / VidOR Dataset
-- [x] Preprocessing script
-- [] Object Detection w/ Faster R-CNN
-- [] Multi Object Tracking w/ DeepSORT
-- [] Relation Detection Baseline
+- [x] Dataset & Annotations (VidVRD & VidOR)
+- [x] Preprocessing (videos -> frames)
+- [x] Aannotations -> COCO format
+- [x] Object Detection w/ Faster R-CNN
+- [x] Multi Object Tracking w/ DeepSORT
+- [ ] Relation Detection Baseline
 
-### Dataset
+### Dataset & Annotations
 * VidVRD dataset can be found in [here](https://xdshang.github.io/docs/imagenet-vidvrd.html).
 * VidOR dataset can be found in [here](https://xdshang.github.io/docs/vidor.html).
 
 ### Preprocessing videos into frames
-* As for VidVRD, use `vidvrd_to_image.sh` (will took about 1 hour).
-* As for VidOR, use `vidor_to_image.sh` (will took about 7-8 hours).
+* For VidVRD, use `vidvrd_to_image.sh` (will take about 1 hour).
+* For VidOR, use `vidor_to_image.sh` (will take about 7-8 hours).
 
 ### Annotation format
 The VidVRD json file contains a dictionary sturctured like:
@@ -113,9 +114,9 @@ The VidOR json file contains a dictionary sturctured like (both are identical ex
 ### Object Detector
 We use off-the-shelf [Faster R-CNN](https://github.com/facebookresearch/detectron2/) equipped with ResNet-101 backbone.
 
-* VidVRD/VidOR to COCO format
-    - As for VidVRD, use `vidvrd_anno_to_coco_format.py` (will took a minute).
-    - As for VidOR, use `vidor_anno_to_coco_format.py` (will took few minutes).
+* :warning: Need to convert VidVRD/VidOR annotations into COCO format!
+    - For VidVRD, use `vidvrd_anno_to_coco_format.py` (will take a minute).
+    - For VidOR, use `vidor_anno_to_coco_format.py` (will take few minutes).
 
 ### Multi Object Tracker
 We use [DeepSORT](https://github.com/nwojke/deep_sort) for multi-object tracking.
