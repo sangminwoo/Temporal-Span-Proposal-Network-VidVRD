@@ -1,4 +1,11 @@
 # Temporal Span Proposal Network for Video Relation Detection
+Implementation of ["What and When to Look?: Temporal Span Proposal Network for Video Visual Relation Detection"](https://arxiv.org/pdf/2107.07154.pdf)
+
+<div style="color:#0000FF" align="center">
+<img src="figures/tspn.png" width="850"/>
+</div>
+
+Identifying relations between objects is central to understanding the scene. While several works have been proposed for relation modeling in the image domain, there have been many constraints in the video domain due to challenging dynamics of spatio-temporal interactions (e.g., Between which objects are there an interaction? When do relations occur and end?). To date, two representative methods have been proposed to tackle Video Visual Relation Detection (VidVRD): segment-based and window-based. We first point out the limitations these two methods have and propose Temporal Span Proposal Network (TSPN), a novel method with two advantages in terms of efficiency and effectiveness. 1) TSPN tells what to look: it sparsifies relation search space by scoring relationness (i.e., confidence score for the existence of a relation between pair of objects) of object pair. 2) TSPN tells when to look: it leverages the full video context to simultaneously predict the temporal span and categories of the entire relations. TSPN demonstrates its effectiveness by achieving new state-of-the-art by a significant margin on two VidVRD benchmarks (ImageNet-VidVDR and VidOR) while also showing lower time complexity than existing methods - in particular, twice as efficient as a popular segment-based approach.
 
 ## Video Visual Realtion Detection (VidVRD) & Video Object Relation (VidOR)
 - [x] Dataset & Annotations (VidVRD & VidOR)
@@ -135,7 +142,14 @@ sh eval.sh
 ```
 
 ## Citation
-TODO
+    @misc{woo2021look,
+          title={{What and When to Look?: Temporal Span Proposal Network for Video Visual Relation Detection}}, 
+          author={Sangmin Woo and Junhyug Noh and Kangil Kim},
+          year={2021},
+          eprint={2107.07154},
+          archivePrefix={arXiv},
+          primaryClass={cs.CV}
+    }
 
 ## Acknowledgement
 
