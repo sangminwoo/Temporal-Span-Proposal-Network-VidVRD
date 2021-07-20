@@ -144,13 +144,11 @@ sh eval.sh
 ```
 
 ## Citation
-    @misc{woo2021look,
-          title={{What and When to Look?: Temporal Span Proposal Network for Video Visual Relation Detection}}, 
-          author={Sangmin Woo and Junhyug Noh and Kangil Kim},
-          year={2021},
-          eprint={2107.07154},
-          archivePrefix={arXiv},
-          primaryClass={cs.CV}
+    @article{woo2021and,
+      title={{What and When to Look?: Temporal Span Proposal Network for Video Visual Relation Detection}},
+      author={Woo, Sangmin and Noh, Junhyug and Kim, Kangil},
+      journal={arXiv preprint arXiv:2107.07154},
+      year={2021}
     }
 
 ## Acknowledgement
