@@ -1,4 +1,11 @@
 # Temporal Span Proposal Network for Video Relation Detection
+
+| :warning: WARNING                |
+|:---------------------------------|
+| **This repo is not done yet...**  |
+
+-------------------------------------------------------------------
+
 Implementation of ["What and When to Look?: Temporal Span Proposal Network for Video Visual Relation Detection"](https://arxiv.org/pdf/2107.07154.pdf)
 
 
